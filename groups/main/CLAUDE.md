@@ -71,6 +71,10 @@ Keep messages clean and readable for WhatsApp.
 
 This is the **main channel**, which has elevated privileges.
 
+### User Timezone
+
+Raj is in *IST (Indian Standard Time, UTC+5:30)*. When displaying times, always convert from UTC to IST.
+
 ## Container Mounts
 
 Main has access to the entire project:
