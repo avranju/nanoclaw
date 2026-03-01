@@ -56,7 +56,7 @@ RUN mkdir -p /workspace/group /workspace/global /workspace/extra /workspace/ipc/
 RUN printf '#!/bin/bash\nset -e\ncd /app && npx tsc --outDir /tmp/dist 2>&1 >&2\nln -s /app/node_modules /tmp/dist/node_modules\nchmod -R a-w /tmp/dist\ncat > /tmp/input.json\nnode /tmp/dist/index.js < /tmp/input.json\n' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
 
 # Install UniFi Network MCP server
-RUN git clone --depth 1 https://github.com/Ruashots/unifi-network-mcp.git /opt/unifi-network-mcp \
+RUN git clone --depth 1 https://github.com/avranju/unifi-network-mcp.git /opt/unifi-network-mcp \
     && cd /opt/unifi-network-mcp \
     && npm install \
     && npm run build \
