@@ -455,6 +455,7 @@ async function runQuery(
           env: {
             UNIFI_BASE_URL: containerInput.secrets?.UNIFI_BASE_URL ?? '',
             UNIFI_API_KEY: containerInput.secrets?.UNIFI_API_KEY ?? '',
+            NODE_TLS_REJECT_UNAUTHORIZED: '0',
           },
         },
       },
