@@ -93,8 +93,14 @@ export class GroupQueue {
     const state = this.getGroup(groupJid);
 
     // Prevent double-queuing of the same task (whether pending or currently running)
-    if (state.runningTaskId === taskId || state.pendingTasks.some((t) => t.id === taskId)) {
-      logger.debug({ groupJid, taskId }, 'Task already queued or running, skipping');
+    if (
+      state.runningTaskId === taskId ||
+      state.pendingTasks.some((t) => t.id === taskId)
+    ) {
+      logger.debug(
+        { groupJid, taskId },
+        'Task already queued or running, skipping',
+      );
       return;
     }
 
