@@ -317,7 +317,9 @@ export class TelegramChannel implements Channel {
         const ext = originalName.includes('.')
           ? originalName.split('.').pop()!
           : filePath.split('.').pop() || 'bin';
-        const baseName = originalName.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const baseName = originalName
+          .replace(/\.[^.]+$/, '')
+          .replace(/[^a-zA-Z0-9_-]/g, '_');
         const filename = `${baseName}_${ctx.message.date}.${ext}`;
         const groupDir = resolveGroupFolderPath(group.folder);
         const filesDir = path.join(groupDir, 'files');
@@ -336,7 +338,10 @@ export class TelegramChannel implements Channel {
         });
         logger.info({ chatJid, filename }, 'Telegram document saved');
       } catch (err) {
-        logger.error({ err }, 'Failed to download Telegram document, using placeholder');
+        logger.error(
+          { err },
+          'Failed to download Telegram document, using placeholder',
+        );
         storeNonText(ctx, `[Document: ${originalName}]`);
       }
     });
