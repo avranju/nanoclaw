@@ -281,16 +281,64 @@ export class TelegramChannel implements Channel {
         });
         logger.info({ chatJid, filename }, 'Telegram photo saved');
       } catch (err) {
-        logger.error({ err }, 'Failed to download Telegram photo, using placeholder');
+        logger.error(
+          { err },
+          'Failed to download Telegram photo, using placeholder',
+        );
         storeNonText(ctx, '[Photo]');
       }
     });
     this.bot.on('message:video', (ctx) => storeNonText(ctx, '[Video]'));
     this.bot.on('message:voice', (ctx) => storeNonText(ctx, '[Voice message]'));
     this.bot.on('message:audio', (ctx) => storeNonText(ctx, '[Audio]'));
-    this.bot.on('message:document', (ctx) => {
-      const name = ctx.message.document?.file_name || 'file';
-      storeNonText(ctx, `[Document: ${name}]`);
+    this.bot.on('message:document', async (ctx) => {
+      const chatJid = `tg:${ctx.chat.id}`;
+      const group = this.opts.registeredGroups()[chatJid];
+      if (!group) return;
+
+      const doc = ctx.message.document;
+      const originalName = doc?.file_name || 'file';
+      const caption = ctx.message.caption ? ` ${ctx.message.caption}` : '';
+      const timestamp = new Date(ctx.message.date * 1000).toISOString();
+      const senderName =
+        ctx.from?.first_name ||
+        ctx.from?.username ||
+        ctx.from?.id?.toString() ||
+        'Unknown';
+
+      try {
+        const file = await ctx.getFile();
+        const filePath = file.file_path!;
+        const downloadUrl = `https://api.telegram.org/file/bot${this.botToken}/${filePath}`;
+        const response = await fetch(downloadUrl);
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const buffer = Buffer.from(await response.arrayBuffer());
+
+        const ext = originalName.includes('.')
+          ? originalName.split('.').pop()!
+          : filePath.split('.').pop() || 'bin';
+        const baseName = originalName.replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9_-]/g, '_');
+        const filename = `${baseName}_${ctx.message.date}.${ext}`;
+        const groupDir = resolveGroupFolderPath(group.folder);
+        const filesDir = path.join(groupDir, 'files');
+        fs.mkdirSync(filesDir, { recursive: true });
+        fs.writeFileSync(path.join(filesDir, filename), buffer);
+
+        this.opts.onChatMetadata(chatJid, timestamp);
+        this.opts.onMessage(chatJid, {
+          id: ctx.message.message_id.toString(),
+          chat_jid: chatJid,
+          sender: ctx.from?.id?.toString() || '',
+          sender_name: senderName,
+          content: `[File: /workspace/group/files/${filename}]${caption}`,
+          timestamp,
+          is_from_me: false,
+        });
+        logger.info({ chatJid, filename }, 'Telegram document saved');
+      } catch (err) {
+        logger.error({ err }, 'Failed to download Telegram document, using placeholder');
+        storeNonText(ctx, `[Document: ${originalName}]`);
+      }
     });
     this.bot.on('message:sticker', (ctx) => {
       const emoji = ctx.message.sticker?.emoji || '';
