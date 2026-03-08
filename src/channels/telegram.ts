@@ -12,6 +12,8 @@ import {
   OnInboundMessage,
   RegisteredGroup,
 } from '../types.js';
+import { registerChannel, ChannelOpts } from './registry.js';
+import { readEnvFile } from '../env.js';
 
 // Bot pool for agent teams: send-only Api instances (no polling)
 const poolApis: Api[] = [];
@@ -428,3 +430,11 @@ export class TelegramChannel implements Channel {
     }
   }
 }
+
+registerChannel('telegram', (opts: ChannelOpts) => {
+  const token =
+    process.env.TELEGRAM_BOT_TOKEN ||
+    readEnvFile(['TELEGRAM_BOT_TOKEN']).TELEGRAM_BOT_TOKEN;
+  if (!token) return null;
+  return new TelegramChannel(token, opts);
+});
