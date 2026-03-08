@@ -280,6 +280,38 @@ Use available_groups.json to find the JID for a group. The folder name should be
   },
 );
 
+server.tool(
+  'get_context_usage',
+  'Get current context window usage statistics for this session. Shows how many tokens have been used out of the model\'s context window limit.',
+  {},
+  async () => {
+    const usageFile = path.join(IPC_DIR, 'context-usage.json');
+    try {
+      if (!fs.existsSync(usageFile)) {
+        return { content: [{ type: 'text' as const, text: 'No context usage data available yet.' }] };
+      }
+
+      const data = JSON.parse(fs.readFileSync(usageFile, 'utf-8'));
+      const contextWindowLimit = 200_000;
+      const pct = ((data.contextSize / contextWindowLimit) * 100).toFixed(1);
+      const text = [
+        `Context usage: ${data.contextSize.toLocaleString()} / ${contextWindowLimit.toLocaleString()} tokens (${pct}%)`,
+        `  Input tokens (new):   ${data.inputTokens.toLocaleString()}`,
+        `  Cache read:           ${data.cacheReadTokens.toLocaleString()}`,
+        `  Cache created:        ${data.cacheCreationTokens.toLocaleString()}`,
+        `  Output tokens:        ${data.outputTokens.toLocaleString()}`,
+        `  Last updated: ${data.updatedAt}`,
+      ].join('\n');
+
+      return { content: [{ type: 'text' as const, text: text }] };
+    } catch (err) {
+      return {
+        content: [{ type: 'text' as const, text: `Error reading context usage: ${err instanceof Error ? err.message : String(err)}` }],
+      };
+    }
+  },
+);
+
 // Start the stdio transport
 const transport = new StdioServerTransport();
 await server.connect(transport);

@@ -473,6 +473,24 @@ async function runQuery(
       lastAssistantUuid = (message as { uuid: string }).uuid;
     }
 
+    if (message.type === 'assistant') {
+      const usage = (message as { message?: { usage?: { input_tokens?: number; cache_creation_input_tokens?: number; cache_read_input_tokens?: number; output_tokens?: number } } }).message?.usage;
+      if (usage) {
+        const contextSize = (usage.input_tokens || 0) + (usage.cache_creation_input_tokens || 0) + (usage.cache_read_input_tokens || 0);
+        const usageFile = path.join(IPC_INPUT_DIR, '..', 'context-usage.json');
+        try {
+          fs.writeFileSync(usageFile, JSON.stringify({
+            contextSize,
+            inputTokens: usage.input_tokens || 0,
+            cacheCreationTokens: usage.cache_creation_input_tokens || 0,
+            cacheReadTokens: usage.cache_read_input_tokens || 0,
+            outputTokens: usage.output_tokens || 0,
+            updatedAt: new Date().toISOString(),
+          }));
+        } catch { /* ignore */ }
+      }
+    }
+
     if (message.type === 'system' && message.subtype === 'init') {
       newSessionId = message.session_id;
       log(`Session initialized: ${newSessionId}`);
