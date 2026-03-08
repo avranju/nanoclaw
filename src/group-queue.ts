@@ -18,9 +18,9 @@ interface GroupState {
   active: boolean;
   idleWaiting: boolean;
   isTaskContainer: boolean;
+  runningTaskId: string | null;
   pendingMessages: boolean;
   pendingTasks: QueuedTask[];
-  runningTaskId: string | null;
   process: ChildProcess | null;
   containerName: string | null;
   groupFolder: string | null;
@@ -42,9 +42,9 @@ export class GroupQueue {
         active: false,
         idleWaiting: false,
         isTaskContainer: false,
+        runningTaskId: null,
         pendingMessages: false,
         pendingTasks: [],
-        runningTaskId: null,
         process: null,
         containerName: null,
         groupFolder: null,
@@ -92,15 +92,13 @@ export class GroupQueue {
 
     const state = this.getGroup(groupJid);
 
-    // Prevent double-queuing of the same task (whether pending or currently running)
-    if (
-      state.runningTaskId === taskId ||
-      state.pendingTasks.some((t) => t.id === taskId)
-    ) {
-      logger.debug(
-        { groupJid, taskId },
-        'Task already queued or running, skipping',
-      );
+    // Prevent double-queuing: check both pending and currently-running task
+    if (state.runningTaskId === taskId) {
+      logger.debug({ groupJid, taskId }, 'Task already running, skipping');
+      return;
+    }
+    if (state.pendingTasks.some((t) => t.id === taskId)) {
+      logger.debug({ groupJid, taskId }, 'Task already queued, skipping');
       return;
     }
 
@@ -110,9 +108,6 @@ export class GroupQueue {
         this.closeStdin(groupJid);
       }
       logger.debug({ groupJid, taskId }, 'Container active, task queued');
-      // Signal the container to wind down so the pending task can run promptly.
-      // This uses the same _close sentinel as the idle timer.
-      this.closeStdin(groupJid);
       return;
     }
 
@@ -239,9 +234,9 @@ export class GroupQueue {
   private async runTask(groupJid: string, task: QueuedTask): Promise<void> {
     const state = this.getGroup(groupJid);
     state.active = true;
-    state.runningTaskId = task.id;
     state.idleWaiting = false;
     state.isTaskContainer = true;
+    state.runningTaskId = task.id;
     this.activeCount++;
 
     logger.debug(
@@ -255,8 +250,8 @@ export class GroupQueue {
       logger.error({ groupJid, taskId: task.id, err }, 'Error running task');
     } finally {
       state.active = false;
-      state.runningTaskId = null;
       state.isTaskContainer = false;
+      state.runningTaskId = null;
       state.process = null;
       state.containerName = null;
       state.groupFolder = null;
