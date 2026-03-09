@@ -63,6 +63,13 @@ RUN git clone --depth 1 https://github.com/avranju/unifi-network-mcp.git /opt/un
     && npm run build \
     && rm -rf /opt/unifi-network-mcp/.git
 
+# Install SSH MCP server
+RUN git clone --depth 1 https://git.nerdworks.dev/avranju/ssh-mcp.git /opt/ssh-mcp \
+    && cd /opt/ssh-mcp \
+    && npm install \
+    && npm run build \
+    && rm -rf /opt/ssh-mcp/.git
+
 # Set ownership to node user (non-root) for writable directories
 RUN chown -R node:node /workspace && chmod 777 /home/node
 

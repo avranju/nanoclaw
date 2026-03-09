@@ -161,6 +161,16 @@ function buildVolumeMounts(
     readonly: false,
   });
 
+  // SSH config and keys directory (read-only)
+  const sshDir = path.join(DATA_DIR, 'ssh');
+  if (fs.existsSync(sshDir)) {
+    mounts.push({
+      hostPath: sshDir,
+      containerPath: '/workspace/ssh',
+      readonly: true,
+    });
+  }
+
   // Per-group IPC namespace: each group gets its own IPC directory
   // This prevents cross-group privilege escalation via IPC
   const groupIpcDir = resolveGroupIpcPath(group.folder);

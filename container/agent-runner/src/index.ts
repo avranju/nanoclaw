@@ -433,7 +433,8 @@ async function runQuery(
         'TodoWrite', 'ToolSearch', 'Skill',
         'NotebookEdit',
         'mcp__nanoclaw__*',
-        'mcp__unifi-network__*'
+        'mcp__unifi-network__*',
+        'mcp__ssh__*',
       ],
       env: sdkEnv,
       permissionMode: 'bypassPermissions',
@@ -456,6 +457,13 @@ async function runQuery(
             UNIFI_BASE_URL: containerInput.secrets?.UNIFI_BASE_URL ?? '',
             UNIFI_API_KEY: containerInput.secrets?.UNIFI_API_KEY ?? '',
             NODE_TLS_REJECT_UNAUTHORIZED: '0',
+          },
+        },
+        ssh: {
+          command: 'node',
+          args: ['/opt/ssh-mcp/dist/index.js'],
+          env: {
+            SSH_CONFIG_PATH: '/workspace/ssh/config.json',
           },
         },
       },
