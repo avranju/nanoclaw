@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 
 import {
+  TELEGRAM_BOT_POOL,
   ASSISTANT_NAME,
   CREDENTIAL_PROXY_PORT,
   IDLE_TIMEOUT,
@@ -45,6 +46,7 @@ import {
 import { GroupQueue } from './group-queue.js';
 import { resolveGroupFolderPath } from './group-folder.js';
 import { startIpcWatcher } from './ipc.js';
+import { initBotPool } from './channels/telegram.js';
 import { findChannel, formatMessages, formatOutbound } from './router.js';
 import {
   restoreRemoteControl,
@@ -596,6 +598,11 @@ async function main(): Promise<void> {
   if (channels.length === 0) {
     logger.fatal('No channels connected');
     process.exit(1);
+  }
+
+  // Initialize Telegram bot pool for agent team messages
+  if (TELEGRAM_BOT_POOL.length > 0) {
+    await initBotPool(TELEGRAM_BOT_POOL);
   }
 
   // Start subsystems (independently of connection handler)
