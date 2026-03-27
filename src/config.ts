@@ -15,6 +15,7 @@ const envConfig = readEnvFile([
   'TWILIO_ACCOUNT_SID',
   'TWILIO_AUTH_TOKEN',
   'TWILIO_VALIDATE_SIGNATURE',
+  'TWILIO_WEBHOOK_URL',
   'ONECLI_URL',
   'TZ',
   'VOICE_HTTP_PORT',
@@ -76,6 +77,8 @@ export const TWILIO_VALIDATE_SIGNATURE =
   (process.env.TWILIO_VALIDATE_SIGNATURE ||
     envConfig.TWILIO_VALIDATE_SIGNATURE ||
     'true') !== 'false';
+export const TWILIO_WEBHOOK_URL =
+  process.env.TWILIO_WEBHOOK_URL || envConfig.TWILIO_WEBHOOK_URL || '';
 export const DEEPGRAM_API_KEY =
   process.env.DEEPGRAM_API_KEY || envConfig.DEEPGRAM_API_KEY || '';
 export const KOKORO_MODEL_PATH =

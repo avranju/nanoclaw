@@ -3,7 +3,8 @@ import { createHmac, timingSafeEqual } from 'crypto';
 
 import { DeepgramClient } from '@deepgram/sdk';
 import { KokoroTTS } from 'kokoro-js';
-import { mulaw } from 'alawmulaw';
+import alawmulaw from 'alawmulaw';
+const { mulaw } = alawmulaw;
 import WebSocket, { RawData, WebSocketServer } from 'ws';
 
 import {
@@ -13,6 +14,7 @@ import {
   TWILIO_ACCOUNT_SID,
   TWILIO_AUTH_TOKEN,
   TWILIO_VALIDATE_SIGNATURE,
+  TWILIO_WEBHOOK_URL,
   VOICE_HTTP_PORT,
   VOICE_MIRROR_JID,
 } from '../config.js';
@@ -180,15 +182,17 @@ export function isValidTwilioSignature(
   expectedToken: string,
   req: IncomingMessage,
   parameters: Record<string, string>,
-  allowMissingSignature = false,
+  skipValidation = false,
+  urlOverride?: string,
 ): boolean {
+  if (skipValidation) return true;
   const signature = req.headers['x-twilio-signature'];
   if (typeof signature !== 'string' || !signature) {
-    return allowMissingSignature;
+    return false;
   }
   const computed = computeTwilioSignature(
     expectedToken,
-    buildRequestUrl(req),
+    urlOverride || buildRequestUrl(req),
     parameters,
   );
   const receivedBuffer = Buffer.from(signature, 'utf-8');
@@ -613,6 +617,7 @@ export class VoiceChannel implements Channel {
           req,
           formValues,
           !this.validateTwilioSignature,
+          TWILIO_WEBHOOK_URL || undefined,
         )
       ) {
         logger.warn('Rejected Twilio voice webhook with invalid signature');
