@@ -244,7 +244,8 @@ export function float32ToInt16(audio: Float32Array): Int16Array {
   const pcm = new Int16Array(audio.length);
   for (let i = 0; i < audio.length; i++) {
     const sample = Math.max(-1, Math.min(1, audio[i] ?? 0));
-    pcm[i] = sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff);
+    pcm[i] =
+      sample < 0 ? Math.round(sample * 0x8000) : Math.round(sample * 0x7fff);
   }
   return pcm;
 }
@@ -258,7 +259,11 @@ export function encodeTwilioMediaPayloads(
   const muLaw = mulaw.encode(pcm16);
 
   const payloads: string[] = [];
-  for (let offset = 0; offset < muLaw.length; offset += TWILIO_MEDIA_FRAME_SAMPLES) {
+  for (
+    let offset = 0;
+    offset < muLaw.length;
+    offset += TWILIO_MEDIA_FRAME_SAMPLES
+  ) {
     const chunk = muLaw.slice(offset, offset + TWILIO_MEDIA_FRAME_SAMPLES);
     payloads.push(Buffer.from(chunk).toString('base64'));
   }
@@ -473,12 +478,18 @@ export class VoiceChannel implements Channel {
       try {
         session.deepgram.sendCloseStream({ type: 'CloseStream' });
       } catch (err) {
-        logger.debug({ err, callSid }, 'Failed to close Deepgram stream cleanly');
+        logger.debug(
+          { err, callSid },
+          'Failed to close Deepgram stream cleanly',
+        );
       }
       try {
         session.deepgram.close();
       } catch (err) {
-        logger.debug({ err, callSid }, 'Failed to dispose Deepgram socket cleanly');
+        logger.debug(
+          { err, callSid },
+          'Failed to dispose Deepgram socket cleanly',
+        );
       }
       session.deepgram = null;
     }
@@ -489,7 +500,10 @@ export class VoiceChannel implements Channel {
         try {
           session.ws.close();
         } catch (err) {
-          logger.debug({ err, callSid }, 'Failed to close Twilio socket cleanly');
+          logger.debug(
+            { err, callSid },
+            'Failed to close Twilio socket cleanly',
+          );
         }
       }
       session.ws = null;
@@ -499,7 +513,10 @@ export class VoiceChannel implements Channel {
     this.jidToSession.delete(normalizeVoiceJid(session.caller));
   }
 
-  async handleFinalTranscript(callSid: string, transcript: string): Promise<void> {
+  async handleFinalTranscript(
+    callSid: string,
+    transcript: string,
+  ): Promise<void> {
     const session = this.sessions.get(callSid);
     if (!session) {
       logger.warn({ callSid }, 'Ignoring transcript for unknown voice session');
@@ -519,13 +536,7 @@ export class VoiceChannel implements Channel {
 
     const timestamp = this.now().toISOString();
     const jid = normalizeVoiceJid(session.caller);
-    this.opts.onChatMetadata(
-      jid,
-      timestamp,
-      session.caller,
-      this.name,
-      false,
-    );
+    this.opts.onChatMetadata(jid, timestamp, session.caller, this.name, false);
 
     const message: NewMessage = {
       id: `${callSid}:${timestamp}`,
@@ -554,7 +565,10 @@ export class VoiceChannel implements Channel {
 
       const wss = new WebSocketServer({ noServer: true });
       server.on('upgrade', (req, socket, head) => {
-        const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+        const url = new URL(
+          req.url || '/',
+          `http://${req.headers.host || 'localhost'}`,
+        );
         if (url.pathname !== '/twilio/stream') {
           socket.destroy();
           return;
@@ -581,7 +595,10 @@ export class VoiceChannel implements Channel {
     req: IncomingMessage,
     res: ServerResponse,
   ): Promise<void> {
-    const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+    const url = new URL(
+      req.url || '/',
+      `http://${req.headers.host || 'localhost'}`,
+    );
     if (req.method === 'POST' && url.pathname === '/twilio/voice') {
       const body = await readBody(req);
       const params = new URLSearchParams(body);
@@ -604,7 +621,9 @@ export class VoiceChannel implements Channel {
         return;
       }
       const protocol = getRequestProtocol(req) === 'https' ? 'wss' : 'ws';
-      const host = (req.headers['x-forwarded-host'] as string | undefined) || req.headers.host;
+      const host =
+        (req.headers['x-forwarded-host'] as string | undefined) ||
+        req.headers.host;
       const streamUrl = `${protocol}://${host}/twilio/stream`;
       const xml = buildTwilioStreamTwiML(streamUrl, {
         from: payload.From || '',
@@ -638,11 +657,17 @@ export class VoiceChannel implements Channel {
     });
 
     ws.on('error', (err) => {
-      logger.warn({ err, remote: req.socket.remoteAddress }, 'Voice WebSocket error');
+      logger.warn(
+        { err, remote: req.socket.remoteAddress },
+        'Voice WebSocket error',
+      );
     });
   }
 
-  private async handleTwilioMessage(ws: WebSocket, data: RawData): Promise<void> {
+  private async handleTwilioMessage(
+    ws: WebSocket,
+    data: RawData,
+  ): Promise<void> {
     const payload = JSON.parse(data.toString('utf-8')) as TwilioInboundMessage;
 
     switch (payload.event) {
@@ -659,8 +684,7 @@ export class VoiceChannel implements Channel {
         return;
 
       case 'stop': {
-        const callSid =
-          payload.stop?.callSid || this.socketToCallSid.get(ws);
+        const callSid = payload.stop?.callSid || this.socketToCallSid.get(ws);
         if (callSid) this.removeSession(callSid);
         return;
       }
@@ -682,7 +706,10 @@ export class VoiceChannel implements Channel {
 
     const accountSid = payload.start.accountSid;
     if (accountSid && accountSid !== TWILIO_ACCOUNT_SID) {
-      logger.warn({ accountSid, expected: TWILIO_ACCOUNT_SID }, 'Ignoring call from unexpected Twilio account');
+      logger.warn(
+        { accountSid, expected: TWILIO_ACCOUNT_SID },
+        'Ignoring call from unexpected Twilio account',
+      );
       ws.close();
       return;
     }

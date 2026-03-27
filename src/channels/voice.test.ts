@@ -20,9 +20,7 @@ vi.mock('../logger.js', () => ({
   },
 }));
 
-import {
-  VoiceChannel,
-} from './voice.js';
+import { VoiceChannel } from './voice.js';
 import {
   buildTwilioStreamTwiML,
   computeTwilioSignature,
@@ -190,14 +188,10 @@ describe('VoiceChannel', () => {
 
   it('computes a stable Twilio signature from sorted form parameters', () => {
     expect(
-      computeTwilioSignature(
-        'auth-token',
-        'https://example.com/twilio/voice',
-        {
-          CallSid: 'CA123',
-          From: '+15551234567',
-        },
-      ),
+      computeTwilioSignature('auth-token', 'https://example.com/twilio/voice', {
+        CallSid: 'CA123',
+        From: '+15551234567',
+      }),
     ).toBe('FDbWAwX/zSN0COqCZvnTltKhe9c=');
   });
 
@@ -233,7 +227,10 @@ describe('VoiceChannel', () => {
   it('streams TTS sentence-by-sentence instead of waiting for a full response', async () => {
     const generate = vi
       .fn()
-      .mockResolvedValue({ audio: new Float32Array(480), sampling_rate: 24000 });
+      .mockResolvedValue({
+        audio: new Float32Array(480),
+        sampling_rate: 24000,
+      });
     const opts = createOpts();
     const channel = new VoiceChannel(opts, {
       startTransport: false,
