@@ -225,12 +225,10 @@ describe('VoiceChannel', () => {
   });
 
   it('streams TTS sentence-by-sentence instead of waiting for a full response', async () => {
-    const generate = vi
-      .fn()
-      .mockResolvedValue({
-        audio: new Float32Array(480),
-        sampling_rate: 24000,
-      });
+    const generate = vi.fn().mockResolvedValue({
+      audio: new Float32Array(480),
+      sampling_rate: 24000,
+    });
     const opts = createOpts();
     const channel = new VoiceChannel(opts, {
       startTransport: false,
