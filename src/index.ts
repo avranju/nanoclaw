@@ -645,6 +645,9 @@ async function main(): Promise<void> {
     channels.push(channel);
     await channel.connect();
   }
+  for (const channel of channels) {
+    channel.postConnect?.(channels);
+  }
   if (channels.length === 0) {
     logger.fatal('No channels connected');
     process.exit(1);

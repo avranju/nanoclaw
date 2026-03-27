@@ -21,12 +21,16 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@deepgram/sdk": "^5.0.0",
     "@onecli-sh/sdk": "^0.2.0",
+    "alawmulaw": "^6.0.0",
     "better-sqlite3": "11.10.0",
     "cron-parser": "5.5.0",
     "grammy": "^1.39.3",
+    "kokoro-js": "^1.2.1",
     "pino": "^9.6.0",
     "pino-pretty": "^13.0.0",
+    "ws": "^8.20.0",
     "yaml": "^2.8.2",
     "zod": "^4.3.6"
   },
@@ -34,6 +38,7 @@
     "@eslint/js": "^9.35.0",
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22.10.0",
+    "@types/ws": "^8.18.1",
     "@vitest/coverage-v8": "^4.0.18",
     "eslint": "^9.35.0",
     "eslint-plugin-no-catch-all": "^1.1.0",

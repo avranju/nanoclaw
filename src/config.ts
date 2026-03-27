@@ -8,9 +8,17 @@ import { isValidTimezone } from './timezone.js';
 const envConfig = readEnvFile([
   'ASSISTANT_NAME',
   'ASSISTANT_HAS_OWN_NUMBER',
+  'DEEPGRAM_API_KEY',
+  'KOKORO_MODEL_PATH',
+  'KOKORO_VOICE',
   'TELEGRAM_BOT_POOL',
+  'TWILIO_ACCOUNT_SID',
+  'TWILIO_AUTH_TOKEN',
+  'TWILIO_VALIDATE_SIGNATURE',
   'ONECLI_URL',
   'TZ',
+  'VOICE_HTTP_PORT',
+  'VOICE_MIRROR_JID',
 ]);
 
 export const ASSISTANT_NAME =
@@ -54,6 +62,26 @@ export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
 ); // 10MB default
 export const ONECLI_URL =
   process.env.ONECLI_URL || envConfig.ONECLI_URL || 'http://localhost:10254';
+export const VOICE_HTTP_PORT = parseInt(
+  process.env.VOICE_HTTP_PORT || envConfig.VOICE_HTTP_PORT || '3001',
+  10,
+);
+export const VOICE_MIRROR_JID =
+  process.env.VOICE_MIRROR_JID || envConfig.VOICE_MIRROR_JID || '';
+export const TWILIO_ACCOUNT_SID =
+  process.env.TWILIO_ACCOUNT_SID || envConfig.TWILIO_ACCOUNT_SID || '';
+export const TWILIO_AUTH_TOKEN =
+  process.env.TWILIO_AUTH_TOKEN || envConfig.TWILIO_AUTH_TOKEN || '';
+export const TWILIO_VALIDATE_SIGNATURE =
+  (process.env.TWILIO_VALIDATE_SIGNATURE ||
+    envConfig.TWILIO_VALIDATE_SIGNATURE ||
+    'true') !== 'false';
+export const DEEPGRAM_API_KEY =
+  process.env.DEEPGRAM_API_KEY || envConfig.DEEPGRAM_API_KEY || '';
+export const KOKORO_MODEL_PATH =
+  process.env.KOKORO_MODEL_PATH || envConfig.KOKORO_MODEL_PATH || '';
+export const KOKORO_VOICE =
+  process.env.KOKORO_VOICE || envConfig.KOKORO_VOICE || 'af_heart';
 export const IPC_POLL_INTERVAL = 1000;
 export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10); // 30min default — how long to keep container alive after last result
 export const MAX_CONCURRENT_CONTAINERS = Math.max(
