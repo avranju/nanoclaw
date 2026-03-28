@@ -29,7 +29,10 @@ async function sendWithMarkdown(
   } catch (err: any) {
     // Telegram returns 400 for malformed Markdown — retry as plain text
     if (err?.error_code === 400 || err?.statusCode === 400) {
-      logger.debug({ err: err.message }, 'Markdown parse failed, sending as plain text');
+      logger.debug(
+        { err: err.message },
+        'Markdown parse failed, sending as plain text',
+      );
       await api.sendMessage(chatId, text);
     } else {
       throw err;

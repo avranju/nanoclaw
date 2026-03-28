@@ -57,7 +57,9 @@ export interface VoiceChannelConfig {
   startTransport?: boolean;
   validateTwilioSignature?: boolean;
   loadTts?: () => Promise<TtsEngineLike>;
-  createVad?: (onSpeechEnd: (audio: Float32Array) => void) => Promise<RealTimeVadLike>;
+  createVad?: (
+    onSpeechEnd: (audio: Float32Array) => void,
+  ) => Promise<RealTimeVadLike>;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -305,7 +307,9 @@ export class VoiceChannel implements Channel {
   private readonly startTransport: boolean;
   private readonly validateTwilioSignature: boolean;
   private readonly loadTtsFn: () => Promise<TtsEngineLike>;
-  private readonly createVadFn: (onSpeechEnd: (audio: Float32Array) => void) => Promise<RealTimeVadLike>;
+  private readonly createVadFn: (
+    onSpeechEnd: (audio: Float32Array) => void,
+  ) => Promise<RealTimeVadLike>;
   private readonly now: () => Date;
   private readonly sleepFn: (ms: number) => Promise<void>;
 
@@ -464,9 +468,11 @@ export class VoiceChannel implements Channel {
     }
 
     if (session.vad) {
-      session.vad.flush().catch((err) =>
-        logger.debug({ err, callSid }, 'VAD flush on session removal failed'),
-      );
+      session.vad
+        .flush()
+        .catch((err) =>
+          logger.debug({ err, callSid }, 'VAD flush on session removal failed'),
+        );
       session.vad = null;
     }
 
@@ -740,7 +746,11 @@ export class VoiceChannel implements Channel {
 
     // Convert Float32 16kHz → Int16 → Buffer for Deepgram
     const int16 = float32ToInt16(audio);
-    const audioBuffer = Buffer.from(int16.buffer, int16.byteOffset, int16.byteLength);
+    const audioBuffer = Buffer.from(
+      int16.buffer,
+      int16.byteOffset,
+      int16.byteLength,
+    );
 
     logger.debug(
       { callSid, samples: audio.length },
@@ -765,7 +775,10 @@ export class VoiceChannel implements Channel {
     }
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const transcript = (response as any)?.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim() ?? '';
+    const transcript =
+      (
+        response as any
+      )?.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim() ?? '';
 
     logger.debug({ callSid, transcript }, 'Transcription complete');
 
