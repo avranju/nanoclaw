@@ -15,6 +15,28 @@ import {
 import { registerChannel, ChannelOpts } from './registry.js';
 import { readEnvFile } from '../env.js';
 
+/**
+ * Send a message with Markdown formatting, falling back to plain text
+ * if Telegram rejects the markup (e.g. unmatched delimiters).
+ */
+async function sendWithMarkdown(
+  api: Api,
+  chatId: string | number,
+  text: string,
+): Promise<void> {
+  try {
+    await api.sendMessage(chatId, text, { parse_mode: 'Markdown' });
+  } catch (err: any) {
+    // Telegram returns 400 for malformed Markdown — retry as plain text
+    if (err?.error_code === 400 || err?.statusCode === 400) {
+      logger.debug({ err: err.message }, 'Markdown parse failed, sending as plain text');
+      await api.sendMessage(chatId, text);
+    } else {
+      throw err;
+    }
+  }
+}
+
 // Bot pool for agent teams: send-only Api instances (no polling)
 const poolApis: Api[] = [];
 // Maps "{groupFolder}:{senderName}" → pool Api index for stable assignment
@@ -87,10 +109,10 @@ export async function sendPoolMessage(
     const numericId = chatId.replace(/^tg:/, '');
     const MAX_LENGTH = 4096;
     if (text.length <= MAX_LENGTH) {
-      await api.sendMessage(numericId, text);
+      await sendWithMarkdown(api, numericId, text);
     } else {
       for (let i = 0; i < text.length; i += MAX_LENGTH) {
-        await api.sendMessage(numericId, text.slice(i, i + MAX_LENGTH));
+        await sendWithMarkdown(api, numericId, text.slice(i, i + MAX_LENGTH));
       }
     }
     logger.info(
@@ -391,10 +413,11 @@ export class TelegramChannel implements Channel {
       // Telegram has a 4096 character limit per message — split if needed
       const MAX_LENGTH = 4096;
       if (text.length <= MAX_LENGTH) {
-        await this.bot.api.sendMessage(numericId, text);
+        await sendWithMarkdown(this.bot.api, numericId, text);
       } else {
         for (let i = 0; i < text.length; i += MAX_LENGTH) {
-          await this.bot.api.sendMessage(
+          await sendWithMarkdown(
+            this.bot.api,
             numericId,
             text.slice(i, i + MAX_LENGTH),
           );
