@@ -24,17 +24,10 @@ import { ChannelOpts, registerChannel } from './registry.js';
 
 type CallState = 'LISTENING' | 'PROCESSING' | 'SPEAKING';
 
-interface DeepgramSocketLike {
-  on(
-    event: 'message' | 'close' | 'error' | 'open',
-    callback: (...args: any[]) => void,
-  ): void;
-  connect(): unknown;
-  waitForOpen(): Promise<unknown>;
-  sendMedia(payload: ArrayBufferLike | Blob | ArrayBufferView): void;
-  sendKeepAlive(message: { type: 'KeepAlive' }): void;
-  sendCloseStream(message: { type: 'CloseStream' }): void;
-  close(): void;
+interface RealTimeVadLike {
+  start(): void;
+  processAudio(data: Float32Array): Promise<void>;
+  flush(): Promise<void>;
 }
 
 interface TtsEngineLike {
@@ -51,8 +44,8 @@ export interface CallSession {
   bufferedTranscript: string;
   ws: WebSocket | null;
   streamSid: string | null;
-  deepgram: DeepgramSocketLike | null;
-  deepgramKeepAlive: ReturnType<typeof setInterval> | null;
+  vad: RealTimeVadLike | null;
+  vadQueue: Promise<void>;
   processingTimeout: ReturnType<typeof setTimeout> | null;
 }
 
@@ -64,7 +57,7 @@ export interface VoiceChannelConfig {
   startTransport?: boolean;
   validateTwilioSignature?: boolean;
   loadTts?: () => Promise<TtsEngineLike>;
-  createDeepgramSocket?: (session: CallSession) => Promise<DeepgramSocketLike>;
+  createVad?: (onSpeechEnd: (audio: Float32Array) => void) => Promise<RealTimeVadLike>;
   now?: () => Date;
   sleep?: (ms: number) => Promise<void>;
 }
@@ -117,8 +110,8 @@ type TwilioInboundMessage =
   | TwilioMarkMessage;
 
 const TWILIO_MEDIA_FRAME_SAMPLES = 160;
-const DEEPGRAM_KEEPALIVE_MS = 10_000;
 const PROCESSING_TIMEOUT_MS = 90_000;
+const VAD_SAMPLE_RATE = 16_000;
 const SENTENCE_BOUNDARY = /(?<=[.!?])\s+/;
 
 function normalizeVoiceJid(jid: string): string {
@@ -162,6 +155,14 @@ function buildRequestUrl(req: IncomingMessage): string {
   const host =
     (req.headers['x-forwarded-host'] as string | undefined) || req.headers.host;
   return `${protocol}://${host}${req.url || '/'}`;
+}
+
+function int16ToFloat32(pcm: Int16Array): Float32Array {
+  const output = new Float32Array(pcm.length);
+  for (let i = 0; i < pcm.length; i++) {
+    output[i] = (pcm[i] ?? 0) / 32768;
+  }
+  return output;
 }
 
 export function computeTwilioSignature(
@@ -274,23 +275,12 @@ export function encodeTwilioMediaPayloads(
   return payloads;
 }
 
-async function defaultCreateDeepgramSocket(
-  _session: CallSession,
-): Promise<DeepgramSocketLike> {
-  const client = new DeepgramClient({ apiKey: DEEPGRAM_API_KEY });
-  const socket = await client.listen.v1.connect({
-    Authorization: `Token ${DEEPGRAM_API_KEY}`,
-    model: 'nova-3',
-    encoding: 'mulaw',
-    sample_rate: 8000,
-    punctuate: 'true',
-    smart_format: 'true',
-    interim_results: 'true',
-    endpointing: 300,
-  });
-  socket.connect();
-  await socket.waitForOpen();
-  return socket as DeepgramSocketLike;
+async function defaultCreateVad(
+  onSpeechEnd: (audio: Float32Array) => void,
+): Promise<RealTimeVadLike> {
+  const { RealTimeVAD } = await import('avr-vad');
+  const vad = await RealTimeVAD.new({ onSpeechEnd });
+  return vad as unknown as RealTimeVadLike;
 }
 
 function isWebSocketOpen(ws: WebSocket | null): ws is WebSocket {
@@ -315,9 +305,7 @@ export class VoiceChannel implements Channel {
   private readonly startTransport: boolean;
   private readonly validateTwilioSignature: boolean;
   private readonly loadTtsFn: () => Promise<TtsEngineLike>;
-  private readonly createDeepgramSocketFn: (
-    session: CallSession,
-  ) => Promise<DeepgramSocketLike>;
+  private readonly createVadFn: (onSpeechEnd: (audio: Float32Array) => void) => Promise<RealTimeVadLike>;
   private readonly now: () => Date;
   private readonly sleepFn: (ms: number) => Promise<void>;
 
@@ -326,6 +314,7 @@ export class VoiceChannel implements Channel {
   private httpServer: Server | null = null;
   private wss: WebSocketServer | null = null;
   private kokoro: TtsEngineLike | null = null;
+  private deepgramClient: DeepgramClient | null = null;
   private ttsQueue: Promise<void> = Promise.resolve();
 
   private readonly sessions = new Map<string, CallSession>();
@@ -348,14 +337,14 @@ export class VoiceChannel implements Channel {
           device: 'cpu',
           dtype: 'q8',
         }) as Promise<TtsEngineLike>);
-    this.createDeepgramSocketFn =
-      config.createDeepgramSocket ?? defaultCreateDeepgramSocket;
+    this.createVadFn = config.createVad ?? defaultCreateVad;
     this.now = config.now ?? (() => new Date());
     this.sleepFn = config.sleep ?? sleep;
   }
 
   async connect(): Promise<void> {
     this.kokoro = await this.loadTtsFn();
+    this.deepgramClient = new DeepgramClient({ apiKey: DEEPGRAM_API_KEY });
 
     if (this.startTransport) {
       await this.startServers();
@@ -454,8 +443,8 @@ export class VoiceChannel implements Channel {
       bufferedTranscript: '',
       ws,
       streamSid: null,
-      deepgram: null,
-      deepgramKeepAlive: null,
+      vad: null,
+      vadQueue: Promise.resolve(),
       processingTimeout: null,
     };
     const jid = normalizeVoiceJid(normalizedCaller);
@@ -469,33 +458,16 @@ export class VoiceChannel implements Channel {
     const session = this.sessions.get(callSid);
     if (!session) return;
 
-    if (session.deepgramKeepAlive) {
-      clearInterval(session.deepgramKeepAlive);
-      session.deepgramKeepAlive = null;
-    }
     if (session.processingTimeout) {
       clearTimeout(session.processingTimeout);
       session.processingTimeout = null;
     }
 
-    if (session.deepgram) {
-      try {
-        session.deepgram.sendCloseStream({ type: 'CloseStream' });
-      } catch (err) {
-        logger.debug(
-          { err, callSid },
-          'Failed to close Deepgram stream cleanly',
-        );
-      }
-      try {
-        session.deepgram.close();
-      } catch (err) {
-        logger.debug(
-          { err, callSid },
-          'Failed to dispose Deepgram socket cleanly',
-        );
-      }
-      session.deepgram = null;
+    if (session.vad) {
+      session.vad.flush().catch((err) =>
+        logger.debug({ err, callSid }, 'VAD flush on session removal failed'),
+      );
+      session.vad = null;
     }
 
     if (session.ws) {
@@ -726,40 +698,80 @@ export class VoiceChannel implements Channel {
 
     const session = this.registerSession(callSid, caller, ws);
     session.streamSid = payload.start.streamSid || null;
-    session.deepgram = await this.createDeepgramSocketFn(session);
-    session.deepgram.on('message', (message: any) => {
-      if (message?.type !== 'Results' || !message.is_final) return;
-      const transcript =
-        message.channel?.alternatives?.[0]?.transcript?.trim() || '';
-      if (!transcript) return;
-      this.handleFinalTranscript(callSid, transcript).catch((err) => {
-        logger.error({ err, callSid }, 'Failed to process final transcript');
-      });
-    });
-    session.deepgram.on('error', (err: Error) => {
-      logger.warn({ err, callSid }, 'Deepgram voice stream error');
-    });
-    session.deepgram.on('close', () => {
-      if (this.sessions.has(callSid)) {
-        logger.info({ callSid }, 'Deepgram voice stream closed');
-      }
-    });
-    session.deepgramKeepAlive = setInterval(() => {
-      try {
-        session.deepgram?.sendKeepAlive({ type: 'KeepAlive' });
-      } catch (err) {
-        logger.debug({ err, callSid }, 'Failed to send Deepgram keepalive');
-      }
-    }, DEEPGRAM_KEEPALIVE_MS);
+
+    const onSpeechEnd = (audio: Float32Array): void => {
+      this.transcribeSpeechBuffer(callSid, audio).catch((err) =>
+        logger.error({ err, callSid }, 'Speech transcription failed'),
+      );
+    };
+    session.vad = await this.createVadFn(onSpeechEnd);
+    session.vad.start();
+    logger.info({ callSid, caller }, 'Voice call started');
   }
 
   private handleTwilioMedia(ws: WebSocket, payload: TwilioMediaMessage): void {
     const callSid = this.socketToCallSid.get(ws);
     if (!callSid) return;
     const session = this.sessions.get(callSid);
-    if (!session?.deepgram || !payload.media.payload) return;
+    if (!session?.vad || !payload.media.payload) return;
 
-    session.deepgram.sendMedia(Buffer.from(payload.media.payload, 'base64'));
+    const rawMulaw = Buffer.from(payload.media.payload, 'base64');
+    // Convert µ-law 8kHz → Float32, then upsample to 16kHz for Silero VAD
+    const pcm16 = mulaw.decode(new Uint8Array(rawMulaw));
+    const float32 = int16ToFloat32(pcm16);
+    const upsampled = downsampleToRate(float32, 8000, VAD_SAMPLE_RATE);
+
+    // Serialize processAudio calls to preserve internal VAD state
+    session.vadQueue = session.vadQueue
+      .then(() => session.vad!.processAudio(upsampled))
+      .catch((err) =>
+        logger.error({ err, callSid }, 'VAD media frame processing error'),
+      );
+  }
+
+  private async transcribeSpeechBuffer(
+    callSid: string,
+    audio: Float32Array,
+  ): Promise<void> {
+    if (!this.deepgramClient) {
+      logger.warn({ callSid }, 'Deepgram client not initialized');
+      return;
+    }
+
+    // Convert Float32 16kHz → Int16 → Buffer for Deepgram
+    const int16 = float32ToInt16(audio);
+    const audioBuffer = Buffer.from(int16.buffer, int16.byteOffset, int16.byteLength);
+
+    logger.debug(
+      { callSid, samples: audio.length },
+      'Transcribing speech buffer',
+    );
+
+    let response;
+    try {
+      response = await this.deepgramClient.listen.v1.media.transcribeFile(
+        audioBuffer,
+        {
+          model: 'nova-3',
+          encoding: 'linear16',
+          punctuate: true,
+          smart_format: true,
+        },
+        { queryParams: { sample_rate: VAD_SAMPLE_RATE } },
+      );
+    } catch (err) {
+      logger.error({ err, callSid }, 'Deepgram transcription error');
+      return;
+    }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const transcript = (response as any)?.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim() ?? '';
+
+    logger.debug({ callSid, transcript }, 'Transcription complete');
+
+    if (transcript) {
+      await this.handleFinalTranscript(callSid, transcript);
+    }
   }
 
   private async enqueueTtsPlayback(

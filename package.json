@@ -24,6 +24,7 @@
     "@deepgram/sdk": "^5.0.0",
     "@onecli-sh/sdk": "^0.2.0",
     "alawmulaw": "^6.0.0",
+    "avr-vad": "^1.0.9",
     "better-sqlite3": "11.10.0",
     "cron-parser": "5.5.0",
     "grammy": "^1.39.3",
@@ -52,5 +53,8 @@
   },
   "engines": {
     "node": ">=20"
+  },
+  "overrides": {
+    "onnxruntime-node": "1.24.3"
   }
 }
