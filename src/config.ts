@@ -63,6 +63,28 @@ export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
 ); // 10MB default
 export const ONECLI_URL =
   process.env.ONECLI_URL || envConfig.ONECLI_URL || 'http://localhost:10254';
+export const CONTAINER_IMAGE_CLAUDE =
+  process.env.CONTAINER_IMAGE_CLAUDE || 'nanoclaw-agent-claude:latest';
+export const CONTAINER_IMAGE_OPENAI =
+  process.env.CONTAINER_IMAGE_OPENAI || 'nanoclaw-agent-openai:latest';
+export const CONTAINER_IMAGE_CUSTOM =
+  process.env.CONTAINER_IMAGE_CUSTOM || 'custom-provider:latest';
+
+export const PROVIDER_IMAGES: Record<string, string> = {
+  claude: CONTAINER_IMAGE_CLAUDE,
+  openai: CONTAINER_IMAGE_OPENAI,
+  custom: CONTAINER_IMAGE_CUSTOM,
+};
+
+/**
+ * Get container image for provider.
+ * Defaults to 'claude' for backward compatibility.
+ * Allows raw image name as fallback.
+ */
+export function getContainerImage(provider?: string): string {
+  const p = provider || 'claude';
+  return PROVIDER_IMAGES[p] || p;
+}
 export const VOICE_HTTP_PORT = parseInt(
   process.env.VOICE_HTTP_PORT || envConfig.VOICE_HTTP_PORT || '3001',
   10,

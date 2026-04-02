@@ -57,6 +57,7 @@ import {
   restoreRemoteControl,
   startRemoteControl,
   stopRemoteControl,
+  supportsRemoteControl,
 } from './remote-control.js';
 import {
   isSenderAllowed,
@@ -223,6 +224,7 @@ export function _setRegisteredGroups(
  */
 async function processGroupMessages(chatJid: string): Promise<boolean> {
   const group = registeredGroups[chatJid];
+  // Check provider support for remote control
   if (!group) return true;
 
   const channel = findChannel(channels, chatJid);
@@ -620,6 +622,15 @@ async function main(): Promise<void> {
     msg: NewMessage,
   ): Promise<void> {
     const group = registeredGroups[chatJid];
+    // Check provider support for remote control
+    if (group && !supportsRemoteControl(group.provider)) {
+      logger.warn(
+        { chatJid, provider: group.provider },
+        'Remote control not supported for this provider',
+      );
+      return;
+    }
+
     if (!group?.isMain) {
       logger.warn(
         { chatJid, sender: msg.sender },

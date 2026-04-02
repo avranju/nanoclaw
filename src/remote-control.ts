@@ -222,3 +222,32 @@ export function stopRemoteControl():
   logger.info({ pid }, 'Remote Control session stopped');
   return { ok: true };
 }
+
+/**
+ * Check if a group supports remote control
+ * Only Claude provider supports this feature
+ *
+ * @param provider - Group provider name
+ * @returns true if provider is 'claude' or undefined (defaults to claude)
+ */
+export function supportsRemoteControl(provider?: string): boolean {
+  return provider === 'claude' || provider === undefined;
+}
+
+/**
+ * Check if remote control can be started for a group
+ *
+ * @param provider - Group provider name
+ * @returns { supported: true } or { supported: false; error: string }
+ */
+export function canStartRemoteControl(
+  provider?: string,
+): { supported: true } | { supported: false; error: string } {
+  if (!supportsRemoteControl(provider)) {
+    return {
+      supported: false,
+      error: 'Remote control is only available with the Claude provider',
+    };
+  }
+  return { supported: true };
+}

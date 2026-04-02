@@ -15,6 +15,7 @@ import {
   IDLE_TIMEOUT,
   ONECLI_URL,
   TIMEZONE,
+  getContainerImage,
 } from './config.js';
 import { readEnvFile } from './env.js';
 import { resolveGroupFolderPath, resolveGroupIpcPath } from './group-folder.js';
@@ -126,14 +127,31 @@ function buildVolumeMounts(
   }
 
   // Per-group Claude sessions directory (isolated from other groups)
-  // Each group gets their own .claude/ to prevent cross-group session access
+  // Each group gets their own agent-config/ to prevent cross-group session access
   const groupSessionsDir = path.join(
     DATA_DIR,
     'sessions',
     group.folder,
-    '.claude',
+    'agent-config',
   );
   fs.mkdirSync(groupSessionsDir, { recursive: true });
+
+  // Write provider configuration for container consumption
+  const providerConfigFile = path.join(groupSessionsDir, 'provider.json');
+  if (!fs.existsSync(providerConfigFile)) {
+    fs.writeFileSync(
+      providerConfigFile,
+      JSON.stringify(
+        {
+          provider: group.provider || 'claude',
+          settings: {},
+        },
+        null,
+        2,
+      ) + '\n',
+    );
+  }
+
   const settingsFile = path.join(groupSessionsDir, 'settings.json');
   if (!fs.existsSync(settingsFile)) {
     fs.writeFileSync(
@@ -158,7 +176,7 @@ function buildVolumeMounts(
     );
   }
 
-  // Sync skills from container/skills/ into each group's .claude/skills/
+  // Sync skills from container/skills/ into each group's agent-config/skills/
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');
   const skillsDst = path.join(groupSessionsDir, 'skills');
   if (fs.existsSync(skillsSrc)) {
@@ -171,7 +189,7 @@ function buildVolumeMounts(
   }
   mounts.push({
     hostPath: groupSessionsDir,
-    containerPath: '/home/node/.claude',
+    containerPath: '/workspace/agent-config',
     readonly: false,
   });
 
@@ -303,8 +321,6 @@ async function buildContainerArgs(
     }
   }
 
-  args.push(CONTAINER_IMAGE);
-
   return args;
 }
 
@@ -326,6 +342,9 @@ export async function runContainerAgent(
   const agentIdentifier = input.isMain
     ? undefined
     : group.folder.toLowerCase().replace(/_/g, '-');
+  // Select container image based on provider (defaults to claude)
+  const containerImage = getContainerImage(group.provider);
+
   const containerArgs = await buildContainerArgs(
     mounts,
     containerName,
@@ -359,6 +378,8 @@ export async function runContainerAgent(
   fs.mkdirSync(logsDir, { recursive: true });
 
   return new Promise((resolve) => {
+    containerArgs.push(containerImage);
+
     const container = spawn(CONTAINER_RUNTIME_BIN, containerArgs, {
       stdio: ['pipe', 'pipe', 'pipe'],
     });

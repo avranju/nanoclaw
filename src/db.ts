@@ -678,6 +678,7 @@ export function getAllRegisteredGroups(): Record<string, RegisteredGroup> {
       folder: row.folder,
       trigger: row.trigger_pattern,
       added_at: row.added_at,
+      provider: 'claude', // Default provider for backward compatibility
       containerConfig: row.container_config
         ? JSON.parse(row.container_config)
         : undefined,
