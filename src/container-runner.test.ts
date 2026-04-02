@@ -1,6 +1,8 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import { EventEmitter } from 'events';
 import { PassThrough } from 'stream';
+import fs from 'fs';
+import { spawn } from 'child_process';
 
 // Sentinel markers must match container-runner.ts
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
@@ -127,6 +129,7 @@ describe('container-runner timeout behavior', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     fakeProc = createFakeProcess();
+    vi.mocked(fs.readFileSync).mockReturnValue('');
   });
 
   afterEach(() => {
@@ -218,5 +221,33 @@ describe('container-runner timeout behavior', () => {
     const result = await resultPromise;
     expect(result.status).toBe('success');
     expect(result.newSessionId).toBe('session-456');
+  });
+
+  it('passes through Anthropic-compatible endpoint env vars from .env', async () => {
+    vi.mocked(fs.readFileSync).mockReturnValue(
+      [
+        'ANTHROPIC_BASE_URL=http://host.docker.internal:11434',
+        'ANTHROPIC_AUTH_TOKEN=ollama',
+        'ANTHROPIC_API_KEY=dummy-key',
+        'NANOCLAW_MODEL=qwen3.5:35b-a3b-coding-nvfp4',
+      ].join('\n'),
+    );
+
+    const resultPromise = runContainerAgent(testGroup, testInput, () => {});
+    await vi.advanceTimersByTimeAsync(10);
+
+    const spawnCalls = vi.mocked(spawn).mock.calls;
+    expect(spawnCalls.length).toBeGreaterThan(0);
+    const allArgs = spawnCalls.flatMap((call) => call[1] as string[]);
+    expect(allArgs).toContain('-e');
+    expect(allArgs).toContain(
+      'ANTHROPIC_BASE_URL=http://host.docker.internal:11434',
+    );
+    expect(allArgs).toContain('ANTHROPIC_AUTH_TOKEN=ollama');
+    expect(allArgs).toContain('ANTHROPIC_API_KEY=dummy-key');
+    expect(allArgs).toContain('NANOCLAW_MODEL=qwen3.5:35b-a3b-coding-nvfp4');
+
+    fakeProc.emit('close', 0);
+    await resultPromise;
   });
 });
