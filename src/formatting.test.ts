@@ -171,7 +171,6 @@ describe('formatMessages', () => {
     );
   });
 
-
   it('converts timestamps to local time for given timezone', () => {
     // 2024-01-01T18:30:00Z in America/New_York (EST) = 1:30 PM
     const result = formatMessages(
