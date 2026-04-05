@@ -187,8 +187,9 @@ async function runTask(
       async (streamedOutput: ContainerOutput) => {
         if (streamedOutput.result) {
           result = streamedOutput.result;
-          // Forward result to user (sendMessage handles formatting)
-          await deps.sendMessage(task.chat_jid, streamedOutput.result);
+          // Scheduled tasks communicate with the user exclusively via
+          // send_message MCP calls (IPC). The final text output is
+          // internal and must not be sent as a duplicate chat message.
           scheduleClose();
         }
         if (streamedOutput.status === 'success') {
@@ -206,7 +207,7 @@ async function runTask(
     if (output.status === 'error') {
       error = output.error || 'Unknown error';
     } else if (output.result) {
-      // Result was already forwarded to the user via the streaming callback above
+      // Capture result for logging/DB; user messaging is handled via IPC send_message calls
       result = output.result;
     }
 
