@@ -285,7 +285,6 @@ async function buildContainerArgs(
     if (val) args.push('-e', `${key}=${val}`);
   }
 
-
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),
   // or when getuid is unavailable (native Windows without WSL).
