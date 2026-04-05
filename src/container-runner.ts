@@ -255,8 +255,6 @@ async function buildContainerArgs(
 
   // OneCLI gateway handles credential injection — containers never see real secrets.
   // The gateway intercepts HTTPS traffic and injects API keys or OAuth tokens.
-  // For Anthropic-compatible endpoints such as Ollama, pass through explicit
-  // override env vars from .env so the SDK can talk to that endpoint directly.
   const onecliApplied = await onecli.applyContainerConfig(args, {
     addHostMapping: false, // Nanoclaw already handles host gateway
     agent: agentIdentifier,
@@ -273,12 +271,12 @@ async function buildContainerArgs(
   // Runtime-specific args for host gateway resolution
   args.push(...hostGatewayArgs());
 
-  // Pass through explicit provider overrides and non-Anthropic MCP config from .env.
+  // Pass through Anthropic-compatible endpoint overrides (needed for Ollama/self-hosted)
+  // and non-credential config. OAuth token is handled by OneCLI gateway above.
   const passthroughEnv = readEnvFile([
     'ANTHROPIC_BASE_URL',
     'ANTHROPIC_AUTH_TOKEN',
     'ANTHROPIC_API_KEY',
-    'CLAUDE_CODE_OAUTH_TOKEN',
     'NANOCLAW_MODEL',
     'UNIFI_BASE_URL',
     'UNIFI_API_KEY',
@@ -286,6 +284,7 @@ async function buildContainerArgs(
   for (const [key, val] of Object.entries(passthroughEnv)) {
     if (val) args.push('-e', `${key}=${val}`);
   }
+
 
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),
