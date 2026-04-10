@@ -162,7 +162,12 @@ function buildVolumeMounts(
     );
   }
 
-  const settingsFile = path.join(groupSessionsDir, 'settings.json');
+  // Claude Code SDK writes sessions to $HOME/.claude/ — mount a persistent directory
+  // there so sessions survive container restarts. settings.json lives here too so
+  // the 'user' settingsSource loads it correctly.
+  const claudeDir = path.join(DATA_DIR, 'sessions', group.folder, '.claude');
+  fs.mkdirSync(claudeDir, { recursive: true });
+  const settingsFile = path.join(claudeDir, 'settings.json');
   if (!fs.existsSync(settingsFile)) {
     fs.writeFileSync(
       settingsFile,
@@ -185,6 +190,11 @@ function buildVolumeMounts(
       ) + '\n',
     );
   }
+  mounts.push({
+    hostPath: claudeDir,
+    containerPath: '/home/node/.claude',
+    readonly: false,
+  });
 
   // Sync skills from container/skills/ into each group's agent-config/skills/
   const skillsSrc = path.join(process.cwd(), 'container', 'skills');
