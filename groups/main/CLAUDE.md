@@ -75,6 +75,8 @@ This is the **main channel**, which has elevated privileges.
 
 **ALWAYS ask Raj before SSHing into rust-arch, blipbot, or any other VM/server.** Do not initiate SSH connections autonomously, even if it seems obviously helpful for diagnosing a problem. Ask first, act second. No exceptions.
 
+**Once connected via SSH, only run read-only commands** (e.g. `ls`, `cat`, `find`, `journalctl`, `systemctl status`). Do NOT execute binaries, scripts, or any command that could write to disk, modify state, or trigger external side effects — without explicitly asking Raj first. When in doubt, describe what you want to run and ask for approval.
+
 ### User Timezone
 
 Raj is in *IST (Indian Standard Time, UTC+5:30)*. When displaying times, always convert from UTC to IST.
