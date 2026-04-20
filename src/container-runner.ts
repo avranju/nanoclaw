@@ -13,6 +13,7 @@ import {
   DATA_DIR,
   GROUPS_DIR,
   IDLE_TIMEOUT,
+  ONECLI_API_KEY,
   ONECLI_URL,
   TIMEZONE,
   getContainerImage,
@@ -30,7 +31,7 @@ import { OneCLI } from '@onecli-sh/sdk';
 import { validateAdditionalMounts } from './mount-security.js';
 import { RegisteredGroup } from './types.js';
 
-const onecli = new OneCLI({ url: ONECLI_URL });
+const onecli = new OneCLI({ url: ONECLI_URL, apiKey: ONECLI_API_KEY });
 
 // Sentinel markers for robust output parsing (must match agent-runner)
 const OUTPUT_START_MARKER = '---NANOCLAW_OUTPUT_START---';
@@ -323,7 +324,6 @@ async function buildContainerArgs(
     if (val) args.push('-e', `${key}=${val}`);
   }
 
-
   // Run as host user so bind-mounted files are accessible.
   // Skip when running as root (uid 0), as the container's node user (uid 1000),
   // or when getuid is unavailable (native Windows without WSL).
@@ -365,7 +365,6 @@ export async function runContainerAgent(
     : group.folder.toLowerCase().replace(/_/g, '-');
   // Select container image based on provider (defaults to claude)
   const containerImage = getContainerImage(group.provider);
-
 
   const containerArgs = await buildContainerArgs(
     mounts,

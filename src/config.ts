@@ -17,6 +17,7 @@ const envConfig = readEnvFile([
   'TWILIO_VALIDATE_SIGNATURE',
   'TWILIO_WEBHOOK_URL',
   'ONECLI_URL',
+  'ONECLI_API_KEY',
   'TZ',
   'VOICE_HTTP_PORT',
   'VOICE_MIRROR_JID',
@@ -63,6 +64,8 @@ export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
 ); // 10MB default
 export const ONECLI_URL =
   process.env.ONECLI_URL || envConfig.ONECLI_URL || 'http://localhost:10254';
+export const ONECLI_API_KEY =
+  process.env.ONECLI_API_KEY || envConfig.ONECLI_API_KEY;
 export const CONTAINER_IMAGE_CLAUDE =
   process.env.CONTAINER_IMAGE_CLAUDE || 'nanoclaw-agent-claude:latest';
 export const CONTAINER_IMAGE_OPENAI =
