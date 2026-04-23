@@ -16,11 +16,14 @@ import {
   TWILIO_VALIDATE_SIGNATURE,
   TWILIO_WEBHOOK_URL,
   VOICE_HTTP_PORT,
-  VOICE_MIRROR_JID,
 } from '../config.js';
-import { logger } from '../logger.js';
-import { Channel, NewMessage } from '../types.js';
-import { ChannelOpts, registerChannel } from './registry.js';
+import { log } from '../log.js';
+import type {
+  ChannelAdapter,
+  ChannelSetup,
+  OutboundMessage,
+} from './adapter.js';
+import { registerChannelAdapter } from './channel-registry.js';
 
 type CallState = 'LISTENING' | 'PROCESSING' | 'SPEAKING';
 
@@ -50,7 +53,6 @@ export interface CallSession {
 }
 
 export interface VoiceChannelConfig {
-  mirrorJid?: string;
   httpPort?: number;
   modelPath?: string;
   voice?: string;
@@ -296,11 +298,9 @@ function splitIntoSpeechChunks(text: string): string[] {
     .filter(Boolean);
 }
 
-export class VoiceChannel implements Channel {
-  name = 'voice';
-
-  private readonly opts: ChannelOpts;
-  private readonly mirrorJid: string;
+export class VoiceChannel {
+  private readonly channelConfig: VoiceChannelConfig;
+  private readonly setup: ChannelSetup;
   private readonly httpPort: number;
   private readonly modelPath: string;
   private readonly voice: string;
@@ -314,7 +314,6 @@ export class VoiceChannel implements Channel {
   private readonly sleepFn: (ms: number) => Promise<void>;
 
   private connected = false;
-  private mirrorChannel: Channel | null = null;
   private httpServer: Server | null = null;
   private wss: WebSocketServer | null = null;
   private kokoro: TtsEngineLike | null = null;
@@ -325,9 +324,9 @@ export class VoiceChannel implements Channel {
   private readonly jidToSession = new Map<string, CallSession>();
   private readonly socketToCallSid = new Map<WebSocket, string>();
 
-  constructor(opts: ChannelOpts, config: VoiceChannelConfig = {}) {
-    this.opts = opts;
-    this.mirrorJid = config.mirrorJid ?? VOICE_MIRROR_JID;
+  constructor(channelSetup: ChannelSetup, config: VoiceChannelConfig = {}) {
+    this.channelConfig = config;
+    this.setup = channelSetup;
     this.httpPort = config.httpPort ?? VOICE_HTTP_PORT;
     this.modelPath = config.modelPath ?? KOKORO_MODEL_PATH;
     this.voice = config.voice ?? KOKORO_VOICE;
@@ -355,45 +354,25 @@ export class VoiceChannel implements Channel {
     }
 
     this.connected = true;
-    logger.info(
-      {
-        port: this.httpPort,
-        mirrorJid: this.mirrorJid || undefined,
-        hasDeepgramKey: Boolean(DEEPGRAM_API_KEY),
-        hasKokoroModelPath: Boolean(this.modelPath),
-        kokoroVoice: this.voice,
-        hasTwilioAccountSid: Boolean(TWILIO_ACCOUNT_SID),
-        hasTwilioAuthToken: Boolean(TWILIO_AUTH_TOKEN),
-        validateTwilioSignature: this.validateTwilioSignature,
-      },
-      'Voice channel connected',
-    );
-  }
-
-  postConnect(allChannels: Channel[]): void {
-    if (!this.mirrorJid) return;
-    const mirrorChannel = allChannels.find(
-      (channel) => channel !== this && channel.ownsJid(this.mirrorJid),
-    );
-    if (!mirrorChannel) {
-      logger.warn(
-        { mirrorJid: this.mirrorJid },
-        'Voice mirror channel not found',
-      );
-      return;
-    }
-    this.mirrorChannel = mirrorChannel;
+    log.info('Voice channel connected', {
+      port: this.httpPort,
+      hasDeepgramKey: Boolean(DEEPGRAM_API_KEY),
+      hasKokoroModelPath: Boolean(this.modelPath),
+      kokoroVoice: this.voice,
+      hasTwilioAccountSid: Boolean(TWILIO_ACCOUNT_SID),
+      hasTwilioAuthToken: Boolean(TWILIO_AUTH_TOKEN),
+      validateTwilioSignature: this.validateTwilioSignature,
+    });
   }
 
   async sendMessage(jid: string, text: string): Promise<void> {
     const session = this.jidToSession.get(normalizeVoiceJid(jid));
     if (!session) {
-      logger.warn({ jid }, 'No active voice session for outbound message');
+      log.warn('No active voice session for outbound message', { jid });
       return;
     }
 
     session.state = 'SPEAKING';
-    await this.mirrorTranscript(text);
 
     try {
       await this.enqueueTtsPlayback(session, text);
@@ -405,10 +384,6 @@ export class VoiceChannel implements Channel {
 
   isConnected(): boolean {
     return this.connected;
-  }
-
-  ownsJid(jid: string): boolean {
-    return jid.startsWith('voice:');
   }
 
   async disconnect(): Promise<void> {
@@ -424,7 +399,7 @@ export class VoiceChannel implements Channel {
     this.httpServer = null;
     this.wss = null;
     this.connected = false;
-    logger.info('Voice channel disconnected');
+    log.info('Voice channel disconnected');
   }
 
   registerSession(
@@ -471,7 +446,7 @@ export class VoiceChannel implements Channel {
       session.vad
         .flush()
         .catch((err) =>
-          logger.debug({ err, callSid }, 'VAD flush on session removal failed'),
+          log.debug('VAD flush on session removal failed', { err, callSid }),
         );
       session.vad = null;
     }
@@ -482,10 +457,7 @@ export class VoiceChannel implements Channel {
         try {
           session.ws.close();
         } catch (err) {
-          logger.debug(
-            { err, callSid },
-            'Failed to close Twilio socket cleanly',
-          );
+          log.debug('Failed to close Twilio socket cleanly', { err, callSid });
         }
       }
       session.ws = null;
@@ -501,7 +473,7 @@ export class VoiceChannel implements Channel {
   ): Promise<void> {
     const session = this.sessions.get(callSid);
     if (!session) {
-      logger.warn({ callSid }, 'Ignoring transcript for unknown voice session');
+      log.warn('Ignoring transcript for unknown voice session', { callSid });
       return;
     }
 
@@ -514,22 +486,19 @@ export class VoiceChannel implements Channel {
     }
 
     session.state = 'PROCESSING';
-    await this.mirrorTranscript(trimmed);
 
     const timestamp = this.now().toISOString();
     const jid = normalizeVoiceJid(session.caller);
-    this.opts.onChatMetadata(jid, timestamp, session.caller, this.name, false);
 
-    const message: NewMessage = {
+    this.setup.onMetadata(jid, session.caller, false);
+
+    await this.setup.onInbound(jid, null, {
       id: `${callSid}:${timestamp}`,
-      chat_jid: jid,
-      sender: session.caller,
-      sender_name: 'Caller',
-      content: trimmed,
+      kind: 'chat',
       timestamp,
-      is_from_me: false,
-    };
-    this.opts.onMessage(jid, message);
+      content: { text: trimmed, sender: 'Caller', senderId: jid },
+    });
+
     this.armProcessingTimeout(session);
   }
 
@@ -537,7 +506,7 @@ export class VoiceChannel implements Channel {
     await new Promise<void>((resolve, reject) => {
       const server = createServer((req, res) => {
         this.handleHttpRequest(req, res).catch((err) => {
-          logger.error({ err }, 'Voice HTTP handler failed');
+          log.error('Voice HTTP handler failed', { err });
           if (!res.headersSent) {
             res.writeHead(500, { 'content-type': 'text/plain; charset=utf-8' });
           }
@@ -598,7 +567,7 @@ export class VoiceChannel implements Channel {
           TWILIO_WEBHOOK_URL || undefined,
         )
       ) {
-        logger.warn('Rejected Twilio voice webhook with invalid signature');
+        log.warn('Rejected Twilio voice webhook with invalid signature');
         res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
         res.end('forbidden');
         return;
@@ -630,7 +599,7 @@ export class VoiceChannel implements Channel {
   private handleTwilioSocket(ws: WebSocket, req: IncomingMessage): void {
     ws.on('message', (data) => {
       this.handleTwilioMessage(ws, data).catch((err) => {
-        logger.error({ err }, 'Voice WebSocket message handler failed');
+        log.error('Voice WebSocket message handler failed', { err });
       });
     });
 
@@ -640,10 +609,10 @@ export class VoiceChannel implements Channel {
     });
 
     ws.on('error', (err) => {
-      logger.warn(
-        { err, remote: req.socket.remoteAddress },
-        'Voice WebSocket error',
-      );
+      log.warn('Voice WebSocket error', {
+        err,
+        remote: req.socket.remoteAddress,
+      });
     });
   }
 
@@ -673,7 +642,7 @@ export class VoiceChannel implements Channel {
       }
 
       default:
-        logger.debug({ payload }, 'Ignoring unknown Twilio WebSocket event');
+        log.debug('Ignoring unknown Twilio WebSocket event', { payload });
     }
   }
 
@@ -683,16 +652,16 @@ export class VoiceChannel implements Channel {
   ): Promise<void> {
     const callSid = payload.start.callSid;
     if (!callSid) {
-      logger.warn({ payload }, 'Twilio start event missing callSid');
+      log.warn('Twilio start event missing callSid', { payload });
       return;
     }
 
     const accountSid = payload.start.accountSid;
     if (accountSid && accountSid !== TWILIO_ACCOUNT_SID) {
-      logger.warn(
-        { accountSid, expected: TWILIO_ACCOUNT_SID },
-        'Ignoring call from unexpected Twilio account',
-      );
+      log.warn('Ignoring call from unexpected Twilio account', {
+        accountSid,
+        expected: TWILIO_ACCOUNT_SID,
+      });
       ws.close();
       return;
     }
@@ -707,12 +676,12 @@ export class VoiceChannel implements Channel {
 
     const onSpeechEnd = (audio: Float32Array): void => {
       this.transcribeSpeechBuffer(callSid, audio).catch((err) =>
-        logger.error({ err, callSid }, 'Speech transcription failed'),
+        log.error('Speech transcription failed', { err, callSid }),
       );
     };
     session.vad = await this.createVadFn(onSpeechEnd);
     session.vad.start();
-    logger.info({ callSid, caller }, 'Voice call started');
+    log.info('Voice call started', { callSid, caller });
   }
 
   private handleTwilioMedia(ws: WebSocket, payload: TwilioMediaMessage): void {
@@ -722,16 +691,14 @@ export class VoiceChannel implements Channel {
     if (!session?.vad || !payload.media.payload) return;
 
     const rawMulaw = Buffer.from(payload.media.payload, 'base64');
-    // Convert µ-law 8kHz → Float32, then upsample to 16kHz for Silero VAD
     const pcm16 = mulaw.decode(new Uint8Array(rawMulaw));
     const float32 = int16ToFloat32(pcm16);
     const upsampled = downsampleToRate(float32, 8000, VAD_SAMPLE_RATE);
 
-    // Serialize processAudio calls to preserve internal VAD state
     session.vadQueue = session.vadQueue
       .then(() => session.vad!.processAudio(upsampled))
       .catch((err) =>
-        logger.error({ err, callSid }, 'VAD media frame processing error'),
+        log.error('VAD media frame processing error', { err, callSid }),
       );
   }
 
@@ -740,11 +707,10 @@ export class VoiceChannel implements Channel {
     audio: Float32Array,
   ): Promise<void> {
     if (!this.deepgramClient) {
-      logger.warn({ callSid }, 'Deepgram client not initialized');
+      log.warn('Deepgram client not initialized', { callSid });
       return;
     }
 
-    // Convert Float32 16kHz → Int16 → Buffer for Deepgram
     const int16 = float32ToInt16(audio);
     const audioBuffer = Buffer.from(
       int16.buffer,
@@ -752,10 +718,7 @@ export class VoiceChannel implements Channel {
       int16.byteLength,
     );
 
-    logger.debug(
-      { callSid, samples: audio.length },
-      'Transcribing speech buffer',
-    );
+    log.debug('Transcribing speech buffer', { callSid, samples: audio.length });
 
     let response;
     try {
@@ -770,17 +733,16 @@ export class VoiceChannel implements Channel {
         { queryParams: { sample_rate: VAD_SAMPLE_RATE } },
       );
     } catch (err) {
-      logger.error({ err, callSid }, 'Deepgram transcription error');
+      log.error('Deepgram transcription error', { err, callSid });
       return;
     }
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const transcript =
       (
         response as any
       )?.results?.channels?.[0]?.alternatives?.[0]?.transcript?.trim() ?? '';
 
-    logger.debug({ callSid, transcript }, 'Transcription complete');
+    log.debug('Transcription complete', { callSid, transcript });
 
     if (transcript) {
       await this.handleFinalTranscript(callSid, transcript);
@@ -797,14 +759,14 @@ export class VoiceChannel implements Channel {
         session.processingTimeout = null;
       }
       if (!this.kokoro) {
-        logger.warn({ callSid: session.callSid }, 'Kokoro is not initialized');
+        log.warn('Kokoro is not initialized', { callSid: session.callSid });
         return;
       }
       if (!isWebSocketOpen(session.ws) || !session.streamSid) {
-        logger.warn(
-          { callSid: session.callSid, jid: normalizeVoiceJid(session.caller) },
-          'Voice session is missing an active Twilio stream',
-        );
+        log.warn('Voice session is missing an active Twilio stream', {
+          callSid: session.callSid,
+          jid: normalizeVoiceJid(session.caller),
+        });
         return;
       }
 
@@ -853,27 +815,37 @@ export class VoiceChannel implements Channel {
     session.processingTimeout = setTimeout(() => {
       if (!this.sessions.has(session.callSid)) return;
       if (session.state !== 'PROCESSING') return;
-      logger.warn(
-        { callSid: session.callSid, jid: normalizeVoiceJid(session.caller) },
+      log.warn(
         'Voice turn timed out waiting for agent response; resuming listening',
+        {
+          callSid: session.callSid,
+          jid: normalizeVoiceJid(session.caller),
+        },
       );
       session.state = 'LISTENING';
       session.processingTimeout = null;
       void this.flushBufferedTranscript(session);
     }, PROCESSING_TIMEOUT_MS);
   }
-
-  private async mirrorTranscript(text: string): Promise<void> {
-    if (!this.mirrorChannel || !this.mirrorJid) return;
-    try {
-      await this.mirrorChannel.sendMessage(this.mirrorJid, `📞 ${text}`);
-    } catch (err) {
-      logger.warn({ err, mirrorJid: this.mirrorJid }, 'Voice mirror failed');
-    }
-  }
 }
 
-registerChannel('voice', (opts: ChannelOpts) => {
+function extractText(message: OutboundMessage): string | null {
+  const content = message.content as
+    | Record<string, unknown>
+    | string
+    | undefined;
+  if (typeof content === 'string') return content;
+  if (
+    content &&
+    typeof content === 'object' &&
+    typeof content.text === 'string'
+  ) {
+    return content.text;
+  }
+  return null;
+}
+
+function createAdapter(): ChannelAdapter | null {
   if (
     !TWILIO_ACCOUNT_SID ||
     !TWILIO_AUTH_TOKEN ||
@@ -882,5 +854,41 @@ registerChannel('voice', (opts: ChannelOpts) => {
   ) {
     return null;
   }
-  return new VoiceChannel(opts);
-});
+
+  let voiceChannel: VoiceChannel | null = null;
+
+  const adapter: ChannelAdapter = {
+    name: 'voice',
+    channelType: 'voice',
+    supportsThreads: false,
+
+    async setup(config: ChannelSetup): Promise<void> {
+      voiceChannel = new VoiceChannel(config);
+      await voiceChannel.connect();
+    },
+
+    async teardown(): Promise<void> {
+      await voiceChannel?.disconnect();
+      voiceChannel = null;
+    },
+
+    isConnected(): boolean {
+      return voiceChannel?.isConnected() ?? false;
+    },
+
+    async deliver(
+      platformId: string,
+      _threadId: string | null,
+      message: OutboundMessage,
+    ): Promise<string | undefined> {
+      const text = extractText(message);
+      if (text === null) return undefined;
+      await voiceChannel?.sendMessage(platformId, text);
+      return undefined;
+    },
+  };
+
+  return adapter;
+}
+
+registerChannelAdapter('voice', { factory: createAdapter });

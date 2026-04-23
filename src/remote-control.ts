@@ -3,7 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { DATA_DIR } from './config.js';
-import { logger } from './logger.js';
+import { log } from './log.js';
 
 interface RemoteControlSession {
   pid: number;
@@ -60,10 +60,10 @@ export function restoreRemoteControl(): void {
     const session: RemoteControlSession = JSON.parse(data);
     if (session.pid && isProcessAlive(session.pid)) {
       activeSession = session;
-      logger.info(
-        { pid: session.pid, url: session.url },
-        'Restored Remote Control session from previous run',
-      );
+      log.info('Restored Remote Control session from previous run', {
+        pid: session.pid,
+        url: session.url,
+      });
     } else {
       clearState();
     }
@@ -169,10 +169,12 @@ export async function startRemoteControl(
         activeSession = session;
         saveState(session);
 
-        logger.info(
-          { url: match[0], pid, sender, chatJid },
-          'Remote Control session started',
-        );
+        log.info('Remote Control session started', {
+          url: match[0],
+          pid,
+          sender,
+          chatJid,
+        });
         resolve({ ok: true, url: match[0] });
         return;
       }
@@ -219,7 +221,7 @@ export function stopRemoteControl():
   }
   activeSession = null;
   clearState();
-  logger.info({ pid }, 'Remote Control session stopped');
+  log.info('Remote Control session stopped', { pid });
   return { ok: true };
 }
 

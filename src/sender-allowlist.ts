@@ -1,7 +1,7 @@
 import fs from 'fs';
 
 import { SENDER_ALLOWLIST_PATH } from './config.js';
-import { logger } from './logger.js';
+import { log } from './log.js';
 
 export interface ChatAllowlistEntry {
   allow: '*' | string[];
@@ -40,10 +40,7 @@ export function loadSenderAllowlist(
     raw = fs.readFileSync(filePath, 'utf-8');
   } catch (err: unknown) {
     if ((err as NodeJS.ErrnoException).code === 'ENOENT') return DEFAULT_CONFIG;
-    logger.warn(
-      { err, path: filePath },
-      'sender-allowlist: cannot read config',
-    );
+    log.warn('sender-allowlist: cannot read config', { err, path: filePath });
     return DEFAULT_CONFIG;
   }
 
@@ -51,17 +48,16 @@ export function loadSenderAllowlist(
   try {
     parsed = JSON.parse(raw);
   } catch {
-    logger.warn({ path: filePath }, 'sender-allowlist: invalid JSON');
+    log.warn('sender-allowlist: invalid JSON', { path: filePath });
     return DEFAULT_CONFIG;
   }
 
   const obj = parsed as Record<string, unknown>;
 
   if (!isValidEntry(obj.default)) {
-    logger.warn(
-      { path: filePath },
-      'sender-allowlist: invalid or missing default entry',
-    );
+    log.warn('sender-allowlist: invalid or missing default entry', {
+      path: filePath,
+    });
     return DEFAULT_CONFIG;
   }
 
@@ -73,10 +69,10 @@ export function loadSenderAllowlist(
       if (isValidEntry(entry)) {
         chats[jid] = entry;
       } else {
-        logger.warn(
-          { jid, path: filePath },
-          'sender-allowlist: skipping invalid chat entry',
-        );
+        log.warn('sender-allowlist: skipping invalid chat entry', {
+          jid,
+          path: filePath,
+        });
       }
     }
   }
@@ -119,10 +115,10 @@ export function isTriggerAllowed(
 ): boolean {
   const allowed = isSenderAllowed(chatJid, sender, cfg);
   if (!allowed && cfg.logDenied) {
-    logger.debug(
-      { chatJid, sender },
-      'sender-allowlist: trigger denied for sender',
-    );
+    log.debug('sender-allowlist: trigger denied for sender', {
+      chatJid,
+      sender,
+    });
   }
   return allowed;
 }

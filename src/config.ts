@@ -2,6 +2,11 @@ import os from 'os';
 import path from 'path';
 
 import { readEnvFile } from './env.js';
+import {
+  getContainerImageBase,
+  getDefaultContainerImage,
+  getInstallSlug,
+} from './install-slug.js';
 import { isValidTimezone } from './timezone.js';
 
 // Read config values from .env (falls back to process.env).
@@ -28,8 +33,6 @@ export const ASSISTANT_NAME =
 export const ASSISTANT_HAS_OWN_NUMBER =
   (process.env.ASSISTANT_HAS_OWN_NUMBER ||
     envConfig.ASSISTANT_HAS_OWN_NUMBER) === 'true';
-export const POLL_INTERVAL = 2000;
-export const SCHEDULER_POLL_INTERVAL = 60000;
 
 // Absolute paths needed for container mounts
 const PROJECT_ROOT = process.cwd();
@@ -52,8 +55,16 @@ export const STORE_DIR = path.resolve(PROJECT_ROOT, 'store');
 export const GROUPS_DIR = path.resolve(PROJECT_ROOT, 'groups');
 export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
 
+// Per-checkout image tag so two installs on the same host don't share
+// `nanoclaw-agent:latest` and clobber each other on rebuild.
+export const CONTAINER_IMAGE_BASE =
+  process.env.CONTAINER_IMAGE_BASE || getContainerImageBase(PROJECT_ROOT);
 export const CONTAINER_IMAGE =
-  process.env.CONTAINER_IMAGE || 'nanoclaw-agent:latest';
+  process.env.CONTAINER_IMAGE || getDefaultContainerImage(PROJECT_ROOT);
+// Install slug — stamped onto every spawned container via --label so
+// cleanupOrphans only reaps containers from this install, not peers.
+export const INSTALL_SLUG = getInstallSlug(PROJECT_ROOT);
+export const CONTAINER_INSTALL_LABEL = `nanoclaw-install=${INSTALL_SLUG}`;
 export const CONTAINER_TIMEOUT = parseInt(
   process.env.CONTAINER_TIMEOUT || '1800000',
   10,
@@ -62,32 +73,20 @@ export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
   process.env.CONTAINER_MAX_OUTPUT_SIZE || '10485760',
   10,
 ); // 10MB default
-export const ONECLI_URL =
-  process.env.ONECLI_URL || envConfig.ONECLI_URL || 'http://localhost:10254';
+export const ONECLI_URL = process.env.ONECLI_URL || envConfig.ONECLI_URL;
 export const ONECLI_API_KEY =
   process.env.ONECLI_API_KEY || envConfig.ONECLI_API_KEY;
-export const CONTAINER_IMAGE_CLAUDE =
-  process.env.CONTAINER_IMAGE_CLAUDE || 'nanoclaw-agent-claude:latest';
-export const CONTAINER_IMAGE_OPENAI =
-  process.env.CONTAINER_IMAGE_OPENAI || 'nanoclaw-agent-openai:latest';
-export const CONTAINER_IMAGE_CUSTOM =
-  process.env.CONTAINER_IMAGE_CUSTOM || 'custom-provider:latest';
+export const MAX_MESSAGES_PER_PROMPT = Math.max(
+  1,
+  parseInt(process.env.MAX_MESSAGES_PER_PROMPT || '10', 10) || 10,
+);
+export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10); // 30min default — how long to keep container alive after last result
+export const MAX_CONCURRENT_CONTAINERS = Math.max(
+  1,
+  parseInt(process.env.MAX_CONCURRENT_CONTAINERS || '5', 10) || 5,
+);
 
-export const PROVIDER_IMAGES: Record<string, string> = {
-  claude: CONTAINER_IMAGE_CLAUDE,
-  openai: CONTAINER_IMAGE_OPENAI,
-  custom: CONTAINER_IMAGE_CUSTOM,
-};
-
-/**
- * Get container image for provider.
- * Defaults to 'claude' for backward compatibility.
- * Allows raw image name as fallback.
- */
-export function getContainerImage(provider?: string): string {
-  const p = provider || 'claude';
-  return PROVIDER_IMAGES[p] || p;
-}
+// Voice channel config
 export const VOICE_HTTP_PORT = parseInt(
   process.env.VOICE_HTTP_PORT || envConfig.VOICE_HTTP_PORT || '3001',
   10,
@@ -110,16 +109,16 @@ export const KOKORO_MODEL_PATH =
   process.env.KOKORO_MODEL_PATH || envConfig.KOKORO_MODEL_PATH || '';
 export const KOKORO_VOICE =
   process.env.KOKORO_VOICE || envConfig.KOKORO_VOICE || 'af_heart';
-export const MAX_MESSAGES_PER_PROMPT = Math.max(
-  1,
-  parseInt(process.env.MAX_MESSAGES_PER_PROMPT || '10', 10) || 10,
-);
-export const IPC_POLL_INTERVAL = 1000;
-export const IDLE_TIMEOUT = parseInt(process.env.IDLE_TIMEOUT || '1800000', 10); // 30min default — how long to keep container alive after last result
-export const MAX_CONCURRENT_CONTAINERS = Math.max(
-  1,
-  parseInt(process.env.MAX_CONCURRENT_CONTAINERS || '5', 10) || 5,
-);
+
+// Telegram channel config
+export const TELEGRAM_BOT_POOL = (
+  process.env.TELEGRAM_BOT_POOL ||
+  envConfig.TELEGRAM_BOT_POOL ||
+  ''
+)
+  .split(',')
+  .map((t) => t.trim())
+  .filter(Boolean);
 
 function escapeRegex(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -152,12 +151,3 @@ function resolveConfigTimezone(): string {
   return 'UTC';
 }
 export const TIMEZONE = resolveConfigTimezone();
-
-export const TELEGRAM_BOT_POOL = (
-  process.env.TELEGRAM_BOT_POOL ||
-  envConfig.TELEGRAM_BOT_POOL ||
-  ''
-)
-  .split(',')
-  .map((t) => t.trim())
-  .filter(Boolean);
