@@ -505,13 +505,20 @@ Use available_groups.json to find the JID for a group. The folder name must be c
 
 server.tool(
   'get_context_usage',
-  'Get current context window usage statistics for this session. Shows how many tokens have been used out of the model\'s context window limit.',
+  "Get current context window usage statistics for this session. Shows how many tokens have been used out of the model's context window limit.",
   {},
   async () => {
     const usageFile = path.join(IPC_DIR, 'context-usage.json');
     try {
       if (!fs.existsSync(usageFile)) {
-        return { content: [{ type: 'text' as const, text: 'No context usage data available yet.' }] };
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'No context usage data available yet.',
+            },
+          ],
+        };
       }
 
       const data = JSON.parse(fs.readFileSync(usageFile, 'utf-8'));
@@ -529,7 +536,12 @@ server.tool(
       return { content: [{ type: 'text' as const, text: text }] };
     } catch (err) {
       return {
-        content: [{ type: 'text' as const, text: `Error reading context usage: ${err instanceof Error ? err.message : String(err)}` }],
+        content: [
+          {
+            type: 'text' as const,
+            text: `Error reading context usage: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        ],
       };
     }
   },

@@ -7,17 +7,6 @@ description: Quick read-only health check — session context, workspace mounts,
 
 Generate a quick read-only status report of the current agent environment.
 
-**Main-channel check:** Only the main channel has `/workspace/project` mounted. Run:
-
-```bash
-test -d /workspace/project && echo "MAIN" || echo "NOT_MAIN"
-```
-
-If `NOT_MAIN`, respond with:
-> This command is available in your main chat only. Send `/status` there to check system status.
-
-Then stop — do not generate the report.
-
 ## How to gather the information
 
 Run the checks below and compile results into the report format.
@@ -33,14 +22,14 @@ echo "Channel: main"
 ### 2. Workspace and mount visibility
 
 ```bash
-echo "=== Workspace ==="
+echo "=== Session dir ==="
 ls /workspace/ 2>/dev/null
-echo "=== Group folder ==="
-ls /workspace/group/ 2>/dev/null | head -20
+echo "=== Agent folder ==="
+ls /workspace/agent/ 2>/dev/null | head -20
+echo "=== Global memory ==="
+ls /workspace/global/ 2>/dev/null || echo "none"
 echo "=== Extra mounts ==="
 ls /workspace/extra/ 2>/dev/null || echo "none"
-echo "=== IPC ==="
-ls /workspace/ipc/ 2>/dev/null
 ```
 
 ### 3. Tool availability
@@ -80,12 +69,12 @@ Present as a clean, readable message:
 *Session:*
 • Channel: main
 • Time: 2026-03-14 09:30 UTC
-• Working dir: /workspace/group
+• Working dir: /workspace/agent
 
 *Workspace:*
-• Group folder: ✓ (N files)
+• Agent folder: ✓ (N files)
+• Global memory: ✓ / none
 • Extra mounts: none / N directories
-• IPC: ✓ (messages, tasks, input)
 
 *Tools:*
 • Core: ✓  Web: ✓  Orchestration: ✓  MCP: ✓

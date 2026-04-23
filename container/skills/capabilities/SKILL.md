@@ -7,17 +7,6 @@ description: Show what this NanoClaw instance can do — installed skills, avail
 
 Generate a structured read-only report of what this NanoClaw instance can do.
 
-**Main-channel check:** Only the main channel has `/workspace/project` mounted. Run:
-
-```bash
-test -d /workspace/project && echo "MAIN" || echo "NOT_MAIN"
-```
-
-If `NOT_MAIN`, respond with:
-> This command is available in your main chat only. Send `/capabilities` there to see what I can do.
-
-Then stop — do not generate the report.
-
 ## How to gather the information
 
 Run these commands and compile the results into the report format below.
@@ -61,10 +50,10 @@ Check for executable tools in the container:
 which agent-browser 2>/dev/null && echo "agent-browser: available" || echo "agent-browser: not found"
 ```
 
-### 5. Group info
+### 5. Agent info
 
 ```bash
-ls /workspace/group/CLAUDE.md 2>/dev/null && echo "Group memory: yes" || echo "Group memory: no"
+ls /workspace/agent/CLAUDE.local.md 2>/dev/null && echo "Agent memory: yes" || echo "Agent memory: no"
 ls /workspace/extra/ 2>/dev/null && echo "Extra mounts: $(ls /workspace/extra/ 2>/dev/null | wc -l | tr -d ' ')" || echo "Extra mounts: none"
 ```
 
@@ -90,9 +79,8 @@ Present the report as a clean, readable message. Example:
 • agent-browser: ✓
 
 *System:*
-• Group memory: yes/no
+• Agent memory: yes/no
 • Extra mounts: N directories
-• Main channel: yes
 ```
 
 Adapt the output based on what you actually find — don't list things that aren't installed.
