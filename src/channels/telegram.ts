@@ -132,7 +132,6 @@ function extractText(message: OutboundMessage): string | null {
 
 function createAdapter(): ChannelAdapter {
   let bot: Bot | null = null;
-  const typingIntervals = new Map<string, ReturnType<typeof setInterval>>();
 
   const adapter: ChannelAdapter = {
     name: 'telegram',
@@ -408,10 +407,6 @@ function createAdapter(): ChannelAdapter {
     },
 
     async teardown(): Promise<void> {
-      for (const interval of typingIntervals.values()) {
-        clearInterval(interval);
-      }
-      typingIntervals.clear();
       if (bot) {
         bot.stop();
         bot = null;
@@ -462,29 +457,15 @@ function createAdapter(): ChannelAdapter {
       _threadId: string | null,
     ): Promise<void> {
       if (!bot) return;
-
-      const existing = typingIntervals.get(platformId);
-      if (existing) {
-        clearInterval(existing);
-        typingIntervals.delete(platformId);
-      }
-
       const numericId = platformId.replace(/^tg:/, '');
-      const sendAction = async () => {
-        if (!bot) return;
-        try {
-          await bot.api.sendChatAction(numericId, 'typing');
-        } catch (err) {
-          log.debug('Failed to send Telegram typing indicator', {
-            platformId,
-            err,
-          });
-        }
-      };
-
-      await sendAction();
-      const interval = setInterval(sendAction, 4000);
-      typingIntervals.set(platformId, interval);
+      try {
+        await bot.api.sendChatAction(numericId, 'typing');
+      } catch (err) {
+        log.debug('Failed to send Telegram typing indicator', {
+          platformId,
+          err,
+        });
+      }
     },
   };
 
