@@ -299,7 +299,11 @@ function createAdapter(): ChannelAdapter {
               sender: senderName,
               senderId: `tg:${senderId}`,
               attachments: [
-                { type: 'image', name: filename, localPath: `telegram-incoming/${filename}` },
+                {
+                  type: 'image',
+                  name: filename,
+                  localPath: `telegram-incoming/${filename}`,
+                },
               ],
             },
           });
@@ -366,7 +370,11 @@ function createAdapter(): ChannelAdapter {
               sender: senderName,
               senderId: `tg:${senderId}`,
               attachments: [
-                { type: 'file', name: originalName, localPath: `telegram-incoming/${filename}` },
+                {
+                  type: 'file',
+                  name: originalName,
+                  localPath: `telegram-incoming/${filename}`,
+                },
               ],
             },
           });
