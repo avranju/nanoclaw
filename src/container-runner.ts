@@ -375,6 +375,17 @@ function buildMounts(
     });
   }
 
+  // Telegram incoming attachments — shared read-only so the agent can access
+  // images and files sent via Telegram without per-group copies.
+  const telegramIncomingDir = path.join(DATA_DIR, 'telegram-incoming');
+  if (fs.existsSync(telegramIncomingDir)) {
+    mounts.push({
+      hostPath: telegramIncomingDir,
+      containerPath: '/workspace/telegram-incoming',
+      readonly: true,
+    });
+  }
+
   // Additional mounts from container config
   if (
     containerConfig.additionalMounts &&

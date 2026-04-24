@@ -295,9 +295,12 @@ function createAdapter(): ChannelAdapter {
             kind: 'chat',
             timestamp,
             content: {
-              text: `[Image: data/telegram-incoming/${filename}]${caption}`,
+              text: ctx.message.caption || '',
               sender: senderName,
               senderId: `tg:${senderId}`,
+              attachments: [
+                { type: 'image', name: filename, localPath: `telegram-incoming/${filename}` },
+              ],
             },
           });
           log.info('Telegram photo saved', { chatJid, filename });
@@ -359,9 +362,12 @@ function createAdapter(): ChannelAdapter {
             kind: 'chat',
             timestamp,
             content: {
-              text: `[File: data/telegram-incoming/${filename}]${caption}`,
+              text: ctx.message.caption || '',
               sender: senderName,
               senderId: `tg:${senderId}`,
+              attachments: [
+                { type: 'file', name: originalName, localPath: `telegram-incoming/${filename}` },
+              ],
             },
           });
           log.info('Telegram document saved', { chatJid, filename });
