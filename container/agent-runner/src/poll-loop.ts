@@ -296,6 +296,12 @@ async function processQuery(
   // Stream liveness is decided host-side via the heartbeat file + processing
   // claim age (see src/host-sweep.ts); if something is truly stuck, the host
   // will kill the container and messages get reset to pending.
+  // Keep the heartbeat alive between SDK events (e.g. during long tool runs
+  // where no events arrive for >6s and the host-side typing indicator expires).
+  const heartbeatHandle = setInterval(() => {
+    if (!done) touchHeartbeat();
+  }, 3000);
+
   const pollHandle = setInterval(() => {
     if (done) return;
 
@@ -355,6 +361,7 @@ async function processQuery(
     }
   } finally {
     done = true;
+    clearInterval(heartbeatHandle);
     clearInterval(pollHandle);
   }
 
