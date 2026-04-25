@@ -289,6 +289,11 @@ async function processQuery(
 ): Promise<QueryResult> {
   let queryContinuation: string | undefined;
   let done = false;
+  // Tracks whether the agent is mid-turn. Reset to false after each `result`
+  // event so the heartbeat goes stale between turns (causing the host-side
+  // typing indicator to clear). Restored to true when a new message is pushed
+  // into the query so typing resumes while the agent works on the follow-up.
+  let agentWorking = true;
 
   // Concurrent polling: push follow-ups into the active query as they arrive.
   // We do NOT force-end the stream on silence — keeping the query open is
@@ -298,8 +303,10 @@ async function processQuery(
   // will kill the container and messages get reset to pending.
   // Keep the heartbeat alive between SDK events (e.g. during long tool runs
   // where no events arrive for >6s and the host-side typing indicator expires).
+  // Only touch when agentWorking — otherwise the heartbeat stays fresh between
+  // turns, which keeps the typing indicator alive when the agent is idle.
   const heartbeatHandle = setInterval(() => {
-    if (!done) touchHeartbeat();
+    if (!done && agentWorking) touchHeartbeat();
   }, 3000);
 
   const pollHandle = setInterval(() => {
@@ -326,6 +333,7 @@ async function processQuery(
       log(
         `Pushing ${newMessages.length} follow-up message(s) into active query`,
       );
+      agentWorking = true; // new input arriving — agent becomes active again
       query.push(prompt);
 
       markCompleted(newIds);
@@ -357,6 +365,10 @@ async function processQuery(
         if (event.text) {
           dispatchResultText(event.text, routing);
         }
+        // Turn finished — stop touching the heartbeat so it goes stale and
+        // the host-side typing indicator clears. Restored when a follow-up
+        // message is pushed (agentWorking = true in pollHandle above).
+        agentWorking = false;
       }
     }
   } finally {
