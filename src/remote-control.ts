@@ -224,4 +224,3 @@ export function stopRemoteControl():
   log.info('Remote Control session stopped', { pid });
   return { ok: true };
 }
-

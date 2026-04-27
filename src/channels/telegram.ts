@@ -413,7 +413,9 @@ function createAdapter(): ChannelAdapter {
         const userId = ctx.from?.id ? `tg:${ctx.from.id}` : '';
         await ctx.answerCallbackQuery();
         try {
-          await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
+          await ctx.editMessageReplyMarkup({
+            reply_markup: { inline_keyboard: [] },
+          });
         } catch {
           // Message may have been deleted or too old — ignore.
         }
@@ -471,7 +473,10 @@ function createAdapter(): ChannelAdapter {
       const numericId = platformId.replace(/^tg:/, '');
 
       // ask_question — render as a message with inline keyboard buttons.
-      const content = message.content as Record<string, unknown> | string | undefined;
+      const content = message.content as
+        | Record<string, unknown>
+        | string
+        | undefined;
       if (
         content &&
         typeof content === 'object' &&
@@ -482,7 +487,10 @@ function createAdapter(): ChannelAdapter {
         const questionId = content.questionId as string;
         const title = (content.title as string) || '';
         const question = (content.question as string) || '';
-        const options = content.options as Array<{ label: string; value: string }>;
+        const options = content.options as Array<{
+          label: string;
+          value: string;
+        }>;
         const cardText = [title, question].filter(Boolean).join('\n\n');
         const inline_keyboard = [
           options.map((opt) => ({
@@ -496,7 +504,10 @@ function createAdapter(): ChannelAdapter {
           });
           return result.message_id.toString();
         } catch (err) {
-          log.error('Failed to send Telegram approval card', { platformId, err });
+          log.error('Failed to send Telegram approval card', {
+            platformId,
+            err,
+          });
           return undefined;
         }
       }
