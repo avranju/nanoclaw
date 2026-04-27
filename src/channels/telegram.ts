@@ -394,6 +394,32 @@ function createAdapter(): ChannelAdapter {
       bot.on('message:location', (ctx) => storeNonText(ctx, '[Location]'));
       bot.on('message:contact', (ctx) => storeNonText(ctx, '[Contact]'));
 
+      // Inline keyboard button taps — route approval/question responses back.
+      bot.on('callback_query:data', async (ctx) => {
+        const data = ctx.callbackQuery.data;
+        if (!data?.startsWith('ncq:')) {
+          await ctx.answerCallbackQuery();
+          return;
+        }
+        // Format: ncq:<questionId>:<value>
+        const rest = data.slice(4);
+        const colonIdx = rest.indexOf(':');
+        if (colonIdx === -1) {
+          await ctx.answerCallbackQuery();
+          return;
+        }
+        const questionId = rest.slice(0, colonIdx);
+        const value = rest.slice(colonIdx + 1);
+        const userId = ctx.from?.id ? `tg:${ctx.from.id}` : '';
+        await ctx.answerCallbackQuery();
+        try {
+          await ctx.editMessageReplyMarkup({ reply_markup: { inline_keyboard: [] } });
+        } catch {
+          // Message may have been deleted or too old — ignore.
+        }
+        config.onAction(questionId, value, userId);
+      });
+
       bot.catch((err) => {
         log.error('Telegram bot error', { err: err.message });
       });
@@ -442,10 +468,41 @@ function createAdapter(): ChannelAdapter {
         return undefined;
       }
 
+      const numericId = platformId.replace(/^tg:/, '');
+
+      // ask_question — render as a message with inline keyboard buttons.
+      const content = message.content as Record<string, unknown> | string | undefined;
+      if (
+        content &&
+        typeof content === 'object' &&
+        content.type === 'ask_question' &&
+        content.questionId &&
+        content.options
+      ) {
+        const questionId = content.questionId as string;
+        const title = (content.title as string) || '';
+        const question = (content.question as string) || '';
+        const options = content.options as Array<{ label: string; value: string }>;
+        const cardText = [title, question].filter(Boolean).join('\n\n');
+        const inline_keyboard = [
+          options.map((opt) => ({
+            text: opt.label,
+            callback_data: `ncq:${questionId}:${opt.value}`,
+          })),
+        ];
+        try {
+          const result = await bot.api.sendMessage(numericId, cardText, {
+            reply_markup: { inline_keyboard },
+          });
+          return result.message_id.toString();
+        } catch (err) {
+          log.error('Failed to send Telegram approval card', { platformId, err });
+          return undefined;
+        }
+      }
+
       const text = extractText(message);
       if (text === null) return undefined;
-
-      const numericId = platformId.replace(/^tg:/, '');
       const MAX_LENGTH = 4096;
       try {
         if (text.length <= MAX_LENGTH) {

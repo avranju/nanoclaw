@@ -5,6 +5,7 @@
  */
 import { ChildProcess, execSync, spawn } from 'child_process';
 import fs from 'fs';
+import os from 'os';
 import path from 'path';
 
 import { OneCLI } from '@onecli-sh/sdk';
@@ -371,6 +372,16 @@ function buildMounts(
     mounts.push({
       hostPath: skillsSrc,
       containerPath: '/app/skills',
+      readonly: true,
+    });
+  }
+
+  // SSH keys — read-only so agents can SSH to remote hosts.
+  const sshDir = path.join(os.homedir(), '.ssh');
+  if (fs.existsSync(sshDir)) {
+    mounts.push({
+      hostPath: sshDir,
+      containerPath: '/home/node/.ssh',
       readonly: true,
     });
   }
