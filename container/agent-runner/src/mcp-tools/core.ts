@@ -10,11 +10,7 @@ import fs from 'fs';
 import path from 'path';
 
 import { findByName, getAllDestinations } from '../destinations.js';
-import {
-  getMessageIdBySeq,
-  getRoutingBySeq,
-  writeMessageOut,
-} from '../db/messages-out.js';
+import { getMessageIdBySeq, getRoutingBySeq, writeMessageOut } from '../db/messages-out.js';
 import { getSessionRouting } from '../db/session-routing.js';
 import { registerTools } from './server.js';
 import type { McpToolDefinition } from './types.js';
@@ -32,10 +28,7 @@ function ok(text: string) {
 }
 
 function err(text: string) {
-  return {
-    content: [{ type: 'text' as const, text: `Error: ${text}` }],
-    isError: true,
-  };
+  return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
 }
 
 function destinationList(): string {
@@ -58,12 +51,7 @@ function destinationList(): string {
 function resolveRouting(
   to: string | undefined,
 ):
-  | {
-      channel_type: string;
-      platform_id: string;
-      thread_id: string | null;
-      resolvedName: string;
-    }
+  | { channel_type: string; platform_id: string; thread_id: string | null; resolvedName: string }
   | { error: string } {
   if (!to) {
     // Default: reply to whatever thread/channel this session is bound to.
@@ -88,17 +76,13 @@ function resolveRouting(
     to = all[0].name;
   }
   const dest = findByName(to);
-  if (!dest)
-    return {
-      error: `Unknown destination "${to}". Known: ${destinationList()}`,
-    };
+  if (!dest) return { error: `Unknown destination "${to}". Known: ${destinationList()}` };
   if (dest.type === 'channel') {
     // If the destination is the same channel the session is bound to,
     // preserve the thread_id so replies land in the correct thread.
     const session = getSessionRouting();
     const threadId =
-      session.channel_type === dest.channelType &&
-      session.platform_id === dest.platformId
+      session.channel_type === dest.channelType && session.platform_id === dest.platformId
         ? session.thread_id
         : null;
     return {
@@ -108,12 +92,7 @@ function resolveRouting(
       resolvedName: to,
     };
   }
-  return {
-    channel_type: 'agent',
-    platform_id: dest.agentGroupId!,
-    thread_id: null,
-    resolvedName: to,
-  };
+  return { channel_type: 'agent', platform_id: dest.agentGroupId!, thread_id: null, resolvedName: to };
 }
 
 export const sendMessage: McpToolDefinition = {
@@ -124,11 +103,7 @@ export const sendMessage: McpToolDefinition = {
     inputSchema: {
       type: 'object' as const,
       properties: {
-        to: {
-          type: 'string',
-          description:
-            'Destination name (e.g., "family", "worker-1"). Optional if you have only one destination.',
-        },
+        to: { type: 'string', description: 'Destination name (e.g., "family", "worker-1"). Optional if you have only one destination.' },
         text: { type: 'string', description: 'Message content' },
       },
       required: ['text'],
@@ -159,25 +134,14 @@ export const sendMessage: McpToolDefinition = {
 export const sendFile: McpToolDefinition = {
   tool: {
     name: 'send_file',
-    description:
-      'Send a file to a named destination. If you have only one destination, you can omit `to`.',
+    description: 'Send a file to a named destination. If you have only one destination, you can omit `to`.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        to: {
-          type: 'string',
-          description:
-            'Destination name. Optional if you have only one destination.',
-        },
-        path: {
-          type: 'string',
-          description: 'File path (relative to /workspace/agent/ or absolute)',
-        },
+        to: { type: 'string', description: 'Destination name. Optional if you have only one destination.' },
+        path: { type: 'string', description: 'File path (relative to /workspace/agent/ or absolute)' },
         text: { type: 'string', description: 'Optional accompanying message' },
-        filename: {
-          type: 'string',
-          description: 'Display name (default: basename of path)',
-        },
+        filename: { type: 'string', description: 'Display name (default: basename of path)' },
       },
       required: ['path'],
     },
@@ -189,9 +153,7 @@ export const sendFile: McpToolDefinition = {
     const routing = resolveRouting(args.to as string | undefined);
     if ('error' in routing) return err(routing.error);
 
-    const resolvedPath = path.isAbsolute(filePath)
-      ? filePath
-      : path.resolve('/workspace/agent', filePath);
+    const resolvedPath = path.isAbsolute(filePath) ? filePath : path.resolve('/workspace/agent', filePath);
     if (!fs.existsSync(resolvedPath)) return err(`File not found: ${filePath}`);
 
     const id = generateId();
@@ -207,31 +169,22 @@ export const sendFile: McpToolDefinition = {
       platform_id: routing.platform_id,
       channel_type: routing.channel_type,
       thread_id: routing.thread_id,
-      content: JSON.stringify({
-        text: (args.text as string) || '',
-        files: [filename],
-      }),
+      content: JSON.stringify({ text: (args.text as string) || '', files: [filename] }),
     });
 
     log(`send_file: ${id} → ${routing.resolvedName} (${filename})`);
-    return ok(
-      `File sent to ${routing.resolvedName} (id: ${id}, filename: ${filename})`,
-    );
+    return ok(`File sent to ${routing.resolvedName} (id: ${id}, filename: ${filename})`);
   },
 };
 
 export const editMessage: McpToolDefinition = {
   tool: {
     name: 'edit_message',
-    description:
-      'Edit a previously sent message. Targets the same destination the original message was sent to.',
+    description: 'Edit a previously sent message. Targets the same destination the original message was sent to.',
     inputSchema: {
       type: 'object' as const,
       properties: {
-        messageId: {
-          type: 'integer',
-          description: 'Message ID (the numeric id shown in messages)',
-        },
+        messageId: { type: 'integer', description: 'Message ID (the numeric id shown in messages)' },
         text: { type: 'string', description: 'New message content' },
       },
       required: ['messageId', 'text'],
@@ -257,11 +210,7 @@ export const editMessage: McpToolDefinition = {
       platform_id: routing.platform_id,
       channel_type: routing.channel_type,
       thread_id: routing.thread_id,
-      content: JSON.stringify({
-        operation: 'edit',
-        messageId: platformId,
-        text,
-      }),
+      content: JSON.stringify({ operation: 'edit', messageId: platformId, text }),
     });
 
     log(`edit_message: #${seq} → ${platformId}`);
@@ -276,14 +225,8 @@ export const addReaction: McpToolDefinition = {
     inputSchema: {
       type: 'object' as const,
       properties: {
-        messageId: {
-          type: 'integer',
-          description: 'Message ID (the numeric id shown in messages)',
-        },
-        emoji: {
-          type: 'string',
-          description: 'Emoji name (e.g., thumbs_up, heart, check)',
-        },
+        messageId: { type: 'integer', description: 'Message ID (the numeric id shown in messages)' },
+        emoji: { type: 'string', description: 'Emoji name (e.g., thumbs_up, heart, check)' },
       },
       required: ['messageId', 'emoji'],
     },
@@ -308,11 +251,7 @@ export const addReaction: McpToolDefinition = {
       platform_id: routing.platform_id,
       channel_type: routing.channel_type,
       thread_id: routing.thread_id,
-      content: JSON.stringify({
-        operation: 'reaction',
-        messageId: platformId,
-        emoji,
-      }),
+      content: JSON.stringify({ operation: 'reaction', messageId: platformId, emoji }),
     });
 
     log(`add_reaction: #${seq} → ${emoji} on ${platformId}`);

@@ -29,33 +29,29 @@ function ok(text: string) {
 }
 
 function err(text: string) {
-  return {
-    content: [{ type: 'text' as const, text: `Error: ${text}` }],
-    isError: true,
-  };
+  return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
 }
 
 export const scheduleTask: McpToolDefinition = {
   tool: {
     name: 'schedule_task',
-    description: `Schedule a one-shot or recurring task. The user's timezone is declared in the <context timezone="..."/> header of your prompt — interpret the user's "9pm" etc. in that zone. Cron expressions are interpreted in the user's timezone too.`,
+    description:
+      `Schedule a one-shot or recurring task. The user's timezone is declared in the <context timezone="..."/> header of your prompt — interpret the user's "9pm" etc. in that zone. Cron expressions are interpreted in the user's timezone too.`,
     inputSchema: {
       type: 'object' as const,
       properties: {
         prompt: { type: 'string', description: 'Task instructions/prompt' },
         processAfter: {
           type: 'string',
-          description: `ISO 8601 timestamp for the first run. Accepts either UTC (ending in "Z" or "+00:00") or a naive local timestamp (no offset) which is interpreted in the user's timezone (e.g. "2026-01-15T21:00:00" = 9pm user-local). Prefer naive local.`,
+          description:
+            `ISO 8601 timestamp for the first run. Accepts either UTC (ending in "Z" or "+00:00") or a naive local timestamp (no offset) which is interpreted in the user's timezone (e.g. "2026-01-15T21:00:00" = 9pm user-local). Prefer naive local.`,
         },
         recurrence: {
           type: 'string',
           description:
             'Cron expression for recurring tasks (e.g., "0 9 * * 1-5" = weekdays at 9am user-local). Evaluated in the user\'s timezone.',
         },
-        script: {
-          type: 'string',
-          description: 'Optional pre-agent script to run before processing',
-        },
+        script: { type: 'string', description: 'Optional pre-agent script to run before processing' },
       },
       required: ['prompt', 'processAfter'],
     },
@@ -63,14 +59,12 @@ export const scheduleTask: McpToolDefinition = {
   async handler(args) {
     const prompt = args.prompt as string;
     const processAfterIn = args.processAfter as string;
-    if (!prompt || !processAfterIn)
-      return err('prompt and processAfter are required');
+    if (!prompt || !processAfterIn) return err('prompt and processAfter are required');
 
     let processAfter: string;
     try {
       const d = parseZonedToUtc(processAfterIn, TIMEZONE);
-      if (Number.isNaN(d.getTime()))
-        return err(`invalid processAfter: ${processAfterIn}`);
+      if (Number.isNaN(d.getTime())) return err(`invalid processAfter: ${processAfterIn}`);
       processAfter = d.toISOString();
     } catch {
       return err(`invalid processAfter: ${processAfterIn}`);
@@ -98,12 +92,8 @@ export const scheduleTask: McpToolDefinition = {
       }),
     });
 
-    log(
-      `schedule_task: ${id} at ${processAfter}${recurrence ? ` (recurring: ${recurrence})` : ''}`,
-    );
-    return ok(
-      `Task scheduled (id: ${id}, runs at: ${processAfter}${recurrence ? `, recurrence: ${recurrence}` : ''})`,
-    );
+    log(`schedule_task: ${id} at ${processAfter}${recurrence ? ` (recurring: ${recurrence})` : ''}`);
+    return ok(`Task scheduled (id: ${id}, runs at: ${processAfter}${recurrence ? `, recurrence: ${recurrence}` : ''})`);
   },
 };
 
@@ -115,10 +105,7 @@ export const listTasks: McpToolDefinition = {
     inputSchema: {
       type: 'object' as const,
       properties: {
-        status: {
-          type: 'string',
-          description: 'Filter by status: pending or paused (default: both)',
-        },
+        status: { type: 'string', description: 'Filter by status: pending or paused (default: both)' },
       },
     },
   },
@@ -158,17 +145,9 @@ export const listTasks: McpToolDefinition = {
 
     if ((rows as unknown[]).length === 0) return ok('No tasks found.');
 
-    const lines = (
-      rows as Array<{
-        id: string;
-        status: string;
-        process_after: string | null;
-        recurrence: string | null;
-        content: string;
-      }>
-    ).map((r) => {
+    const lines = (rows as Array<{ id: string; status: string; process_after: string | null; recurrence: string | null; content: string }>).map((r) => {
       const content = JSON.parse(r.content);
-      const prompt = ((content.prompt as string) || '').slice(0, 80);
+      const prompt = (content.prompt as string || '').slice(0, 80);
       return `- ${r.id} [${r.status}] at=${r.process_after || 'now'} ${r.recurrence ? `recur=${r.recurrence} ` : ''}→ ${prompt}`;
     });
 
@@ -266,25 +245,20 @@ export const updateTask: McpToolDefinition = {
     inputSchema: {
       type: 'object' as const,
       properties: {
-        taskId: {
-          type: 'string',
-          description:
-            'Series id of the task to update (as shown by list_tasks)',
-        },
+        taskId: { type: 'string', description: 'Series id of the task to update (as shown by list_tasks)' },
         prompt: { type: 'string', description: 'New task prompt (optional)' },
         recurrence: {
           type: 'string',
-          description:
-            'New cron expression (optional). Pass empty string to clear and make the task one-shot.',
+          description: 'New cron expression (optional). Pass empty string to clear and make the task one-shot.',
         },
         processAfter: {
           type: 'string',
-          description: `New ISO 8601 timestamp for the next run (optional). Accepts either UTC (ending in "Z" / "+00:00") or a naive local timestamp interpreted in the user's timezone.`,
+          description:
+            `New ISO 8601 timestamp for the next run (optional). Accepts either UTC (ending in "Z" / "+00:00") or a naive local timestamp interpreted in the user's timezone.`,
         },
         script: {
           type: 'string',
-          description:
-            'New pre-agent script (optional). Pass empty string to clear.',
+          description: 'New pre-agent script (optional). Pass empty string to clear.',
         },
       },
       required: ['taskId'],
@@ -299,21 +273,17 @@ export const updateTask: McpToolDefinition = {
     if (typeof args.processAfter === 'string') {
       try {
         const d = parseZonedToUtc(args.processAfter, TIMEZONE);
-        if (Number.isNaN(d.getTime()))
-          return err(`invalid processAfter: ${args.processAfter}`);
+        if (Number.isNaN(d.getTime())) return err(`invalid processAfter: ${args.processAfter}`);
         update.processAfter = d.toISOString();
       } catch {
         return err(`invalid processAfter: ${args.processAfter}`);
       }
     }
     // Empty string clears recurrence/script; undefined leaves them as-is.
-    if (typeof args.recurrence === 'string')
-      update.recurrence = args.recurrence === '' ? null : args.recurrence;
-    if (typeof args.script === 'string')
-      update.script = args.script === '' ? null : args.script;
+    if (typeof args.recurrence === 'string') update.recurrence = args.recurrence === '' ? null : args.recurrence;
+    if (typeof args.script === 'string') update.script = args.script === '' ? null : args.script;
 
-    if (Object.keys(update).length === 1)
-      return err('at least one field to update is required');
+    if (Object.keys(update).length === 1) return err('at least one field to update is required');
 
     writeMessageOut({
       id: `sys-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
@@ -326,11 +296,4 @@ export const updateTask: McpToolDefinition = {
   },
 };
 
-registerTools([
-  scheduleTask,
-  listTasks,
-  updateTask,
-  cancelTask,
-  pauseTask,
-  resumeTask,
-]);
+registerTools([scheduleTask, listTasks, updateTask, cancelTask, pauseTask, resumeTask]);

@@ -1,25 +1,11 @@
 import fs from 'fs';
 import path from 'path';
 
-import {
-  query as sdkQuery,
-  type HookCallback,
-  type PreCompactHookInput,
-} from '@anthropic-ai/claude-agent-sdk';
+import { query as sdkQuery, type HookCallback, type PreCompactHookInput } from '@anthropic-ai/claude-agent-sdk';
 
-import {
-  clearContainerToolInFlight,
-  setContainerToolInFlight,
-} from '../db/connection.js';
+import { clearContainerToolInFlight, setContainerToolInFlight } from '../db/connection.js';
 import { registerProvider } from './provider-registry.js';
-import type {
-  AgentProvider,
-  AgentQuery,
-  McpServerConfig,
-  ProviderEvent,
-  ProviderOptions,
-  QueryInput,
-} from './types.js';
+import type { AgentProvider, AgentQuery, McpServerConfig, ProviderEvent, ProviderOptions, QueryInput } from './types.js';
 
 function log(msg: string): void {
   console.error(`[claude-provider] ${msg}`);
@@ -129,17 +115,10 @@ function parseTranscript(content: string): ParsedMessage[] {
     try {
       const entry = JSON.parse(line);
       if (entry.type === 'user' && entry.message?.content) {
-        const text =
-          typeof entry.message.content === 'string'
-            ? entry.message.content
-            : entry.message.content
-                .map((c: { text?: string }) => c.text || '')
-                .join('');
+        const text = typeof entry.message.content === 'string' ? entry.message.content : entry.message.content.map((c: { text?: string }) => c.text || '').join('');
         if (text) messages.push({ role: 'user', content: text });
       } else if (entry.type === 'assistant' && entry.message?.content) {
-        const textParts = entry.message.content
-          .filter((c: { type: string }) => c.type === 'text')
-          .map((c: { text: string }) => c.text);
+        const textParts = entry.message.content.filter((c: { type: string }) => c.type === 'text').map((c: { text: string }) => c.text);
         const text = textParts.join('');
         if (text) messages.push({ role: 'assistant', content: text });
       }
@@ -150,33 +129,13 @@ function parseTranscript(content: string): ParsedMessage[] {
   return messages;
 }
 
-function formatTranscriptMarkdown(
-  messages: ParsedMessage[],
-  title?: string | null,
-  assistantName?: string,
-): string {
+function formatTranscriptMarkdown(messages: ParsedMessage[], title?: string | null, assistantName?: string): string {
   const now = new Date();
-  const dateStr = now.toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-    hour12: true,
-  });
-  const lines = [
-    `# ${title || 'Conversation'}`,
-    '',
-    `Archived: ${dateStr}`,
-    '',
-    '---',
-    '',
-  ];
+  const dateStr = now.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+  const lines = [`# ${title || 'Conversation'}`, '', `Archived: ${dateStr}`, '', '---', ''];
   for (const msg of messages) {
     const sender = msg.role === 'user' ? 'User' : assistantName || 'Assistant';
-    const content =
-      msg.content.length > 2000
-        ? msg.content.slice(0, 2000) + '...'
-        : msg.content;
+    const content = msg.content.length > 2000 ? msg.content.slice(0, 2000) + '...' : msg.content;
     lines.push(`**${sender}**: ${content}`, '');
   }
   return lines.join('\n');
@@ -189,10 +148,7 @@ function formatTranscriptMarkdown(
  * block the call here instead of letting the agent hang.
  */
 const preToolUseHook: HookCallback = async (input) => {
-  const i = input as {
-    tool_name?: string;
-    tool_input?: Record<string, unknown>;
-  };
+  const i = input as { tool_name?: string; tool_input?: Record<string, unknown> };
   const toolName = i.tool_name ?? '';
   if (SDK_DISALLOWED_TOOLS.includes(toolName)) {
     return {
@@ -203,15 +159,11 @@ const preToolUseHook: HookCallback = async (input) => {
   // Bash exposes its timeout via the tool_input.timeout field (ms). Any other
   // tool: no declared timeout.
   const declaredTimeoutMs =
-    toolName === 'Bash' && typeof i.tool_input?.timeout === 'number'
-      ? (i.tool_input.timeout as number)
-      : null;
+    toolName === 'Bash' && typeof i.tool_input?.timeout === 'number' ? (i.tool_input.timeout as number) : null;
   try {
     setContainerToolInFlight(toolName, declaredTimeoutMs);
   } catch (err) {
-    log(
-      `PreToolUse: failed to record container_state: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    log(`PreToolUse: failed to record container_state: ${err instanceof Error ? err.message : String(err)}`);
   }
   return { continue: true };
 };
@@ -221,9 +173,7 @@ const postToolUseHook: HookCallback = async () => {
   try {
     clearContainerToolInFlight();
   } catch (err) {
-    log(
-      `PostToolUse: failed to clear container_state: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    log(`PostToolUse: failed to clear container_state: ${err instanceof Error ? err.message : String(err)}`);
   }
   return { continue: true };
 };
@@ -231,8 +181,7 @@ const postToolUseHook: HookCallback = async () => {
 function createPreCompactHook(assistantName?: string): HookCallback {
   return async (input) => {
     const preCompact = input as PreCompactHookInput;
-    const { transcript_path: transcriptPath, session_id: sessionId } =
-      preCompact;
+    const { transcript_path: transcriptPath, session_id: sessionId } = preCompact;
 
     if (!transcriptPath || !fs.existsSync(transcriptPath)) {
       log('No transcript found for archiving');
@@ -246,42 +195,27 @@ function createPreCompactHook(assistantName?: string): HookCallback {
 
       // Try to get summary from sessions index
       let summary: string | undefined;
-      const indexPath = path.join(
-        path.dirname(transcriptPath),
-        'sessions-index.json',
-      );
+      const indexPath = path.join(path.dirname(transcriptPath), 'sessions-index.json');
       if (fs.existsSync(indexPath)) {
         try {
           const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
-          summary = index.entries?.find(
-            (e: { sessionId: string; summary?: string }) =>
-              e.sessionId === sessionId,
-          )?.summary;
+          summary = index.entries?.find((e: { sessionId: string; summary?: string }) => e.sessionId === sessionId)?.summary;
         } catch {
           /* ignore */
         }
       }
 
       const name = summary
-        ? summary
-            .toLowerCase()
-            .replace(/[^a-z0-9]+/g, '-')
-            .replace(/^-+|-+$/g, '')
-            .slice(0, 50)
+        ? summary.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 50)
         : `conversation-${new Date().getHours().toString().padStart(2, '0')}${new Date().getMinutes().toString().padStart(2, '0')}`;
 
       const conversationsDir = '/workspace/agent/conversations';
       fs.mkdirSync(conversationsDir, { recursive: true });
       const filename = `${new Date().toISOString().split('T')[0]}-${name}.md`;
-      fs.writeFileSync(
-        path.join(conversationsDir, filename),
-        formatTranscriptMarkdown(messages, summary, assistantName),
-      );
+      fs.writeFileSync(path.join(conversationsDir, filename), formatTranscriptMarkdown(messages, summary, assistantName));
       log(`Archived conversation to ${filename}`);
     } catch (err) {
-      log(
-        `Failed to archive transcript: ${err instanceof Error ? err.message : String(err)}`,
-      );
+      log(`Failed to archive transcript: ${err instanceof Error ? err.message : String(err)}`);
     }
     return {};
   };
@@ -300,8 +234,7 @@ const CLAUDE_CODE_AUTO_COMPACT_WINDOW = '165000';
  * resumed session can't be found — missing transcript .jsonl, unknown
  * session ID, etc.
  */
-const STALE_SESSION_RE =
-  /no conversation found|ENOENT.*\.jsonl|session.*not found/i;
+const STALE_SESSION_RE = /no conversation found|ENOENT.*\.jsonl|session.*not found/i;
 
 export class ClaudeProvider implements AgentProvider {
   readonly supportsNativeSlashCommands = true;
@@ -339,13 +272,7 @@ export class ClaudeProvider implements AgentProvider {
         additionalDirectories: this.additionalDirectories,
         resume: input.continuation,
         pathToClaudeCodeExecutable: '/pnpm/claude',
-        systemPrompt: instructions
-          ? {
-              type: 'preset' as const,
-              preset: 'claude_code' as const,
-              append: instructions,
-            }
-          : undefined,
+        systemPrompt: instructions ? { type: 'preset' as const, preset: 'claude_code' as const, append: instructions } : undefined,
         allowedTools: TOOL_ALLOWLIST,
         disallowedTools: SDK_DISALLOWED_TOOLS,
         env: this.env,
@@ -376,46 +303,19 @@ export class ClaudeProvider implements AgentProvider {
         if (message.type === 'system' && message.subtype === 'init') {
           yield { type: 'init', continuation: message.session_id };
         } else if (message.type === 'result') {
-          const text =
-            'result' in message
-              ? ((message as { result?: string }).result ?? null)
-              : null;
+          const text = 'result' in message ? (message as { result?: string }).result ?? null : null;
           yield { type: 'result', text };
-        } else if (
-          message.type === 'system' &&
-          (message as { subtype?: string }).subtype === 'api_retry'
-        ) {
+        } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'api_retry') {
           yield { type: 'error', message: 'API retry', retryable: true };
-        } else if (
-          message.type === 'system' &&
-          (message as { subtype?: string }).subtype === 'rate_limit_event'
-        ) {
-          yield {
-            type: 'error',
-            message: 'Rate limit',
-            retryable: false,
-            classification: 'quota',
-          };
-        } else if (
-          message.type === 'system' &&
-          (message as { subtype?: string }).subtype === 'compact_boundary'
-        ) {
-          const meta = (
-            message as { compact_metadata?: { pre_tokens?: number } }
-          ).compact_metadata;
-          const detail = meta?.pre_tokens
-            ? ` (${meta.pre_tokens.toLocaleString()} tokens compacted)`
-            : '';
+        } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'rate_limit_event') {
+          yield { type: 'error', message: 'Rate limit', retryable: false, classification: 'quota' };
+        } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'compact_boundary') {
+          const meta = (message as { compact_metadata?: { pre_tokens?: number } }).compact_metadata;
+          const detail = meta?.pre_tokens ? ` (${meta.pre_tokens.toLocaleString()} tokens compacted)` : '';
           yield { type: 'result', text: `Context compacted${detail}.` };
-        } else if (
-          message.type === 'system' &&
-          (message as { subtype?: string }).subtype === 'task_notification'
-        ) {
+        } else if (message.type === 'system' && (message as { subtype?: string }).subtype === 'task_notification') {
           const tn = message as { summary?: string };
-          yield {
-            type: 'progress',
-            message: tn.summary || 'Task notification',
-          };
+          yield { type: 'progress', message: tn.summary || 'Task notification' };
         }
       }
       log(`Query completed after ${messageCount} SDK messages`);

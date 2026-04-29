@@ -27,10 +27,7 @@ function ok(text: string) {
 }
 
 function err(text: string) {
-  return {
-    content: [{ type: 'text' as const, text: `Error: ${text}` }],
-    isError: true,
-  };
+  return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
 }
 
 function sleep(ms: number): Promise<void> {
@@ -45,10 +42,7 @@ export const askUserQuestion: McpToolDefinition = {
     inputSchema: {
       type: 'object' as const,
       properties: {
-        title: {
-          type: 'string',
-          description: 'Short card title shown above the question',
-        },
+        title: { type: 'string', description: 'Short card title shown above the question' },
         question: { type: 'string', description: 'The question to ask' },
         options: {
           type: 'array',
@@ -66,13 +60,9 @@ export const askUserQuestion: McpToolDefinition = {
               },
             ],
           },
-          description:
-            'Options for the user to choose from (string or {label, selectedLabel?, value?})',
+          description: 'Options for the user to choose from (string or {label, selectedLabel?, value?})',
         },
-        timeout: {
-          type: 'number',
-          description: 'Timeout in seconds (default: 300)',
-        },
+        timeout: { type: 'number', description: 'Timeout in seconds (default: 300)' },
       },
       required: ['title', 'question', 'options'],
     },
@@ -87,13 +77,8 @@ export const askUserQuestion: McpToolDefinition = {
     }
 
     const options = rawOptions.map((o) => {
-      if (typeof o === 'string')
-        return { label: o, selectedLabel: o, value: o };
-      const obj = o as {
-        label: string;
-        selectedLabel?: string;
-        value?: string;
-      };
+      if (typeof o === 'string') return { label: o, selectedLabel: o, value: o };
+      const obj = o as { label: string; selectedLabel?: string; value?: string };
       return {
         label: obj.label,
         selectedLabel: obj.selectedLabel ?? obj.label,
@@ -120,9 +105,7 @@ export const askUserQuestion: McpToolDefinition = {
       }),
     });
 
-    log(
-      `ask_user_question: ${questionId} → "${question}" [${options.join(', ')}]`,
-    );
+    log(`ask_user_question: ${questionId} → "${question}" [${options.join(', ')}]`);
 
     // Poll for response in inbound.db (host writes the response there)
     const deadline = Date.now() + timeout;
@@ -134,9 +117,7 @@ export const askUserQuestion: McpToolDefinition = {
         // Mark the response as completed via processing_ack (outbound.db)
         markCompleted([response.id]);
 
-        log(
-          `ask_user_question response: ${questionId} → ${parsed.selectedOption}`,
-        );
+        log(`ask_user_question response: ${questionId} → ${parsed.selectedOption}`);
         return ok(parsed.selectedOption);
       }
 
@@ -151,20 +132,15 @@ export const askUserQuestion: McpToolDefinition = {
 export const sendCard: McpToolDefinition = {
   tool: {
     name: 'send_card',
-    description:
-      'Send a structured card (interactive or display-only) to the current conversation.',
+    description: 'Send a structured card (interactive or display-only) to the current conversation.',
     inputSchema: {
       type: 'object' as const,
       properties: {
         card: {
           type: 'object',
-          description:
-            'Card structure with title, description, and optional children/actions',
+          description: 'Card structure with title, description, and optional children/actions',
         },
-        fallbackText: {
-          type: 'string',
-          description: 'Text fallback for platforms without card support',
-        },
+        fallbackText: { type: 'string', description: 'Text fallback for platforms without card support' },
       },
       required: ['card'],
     },
@@ -182,11 +158,7 @@ export const sendCard: McpToolDefinition = {
       platform_id: r.platform_id,
       channel_type: r.channel_type,
       thread_id: r.thread_id,
-      content: JSON.stringify({
-        type: 'card',
-        card,
-        fallbackText: (args.fallbackText as string) || '',
-      }),
+      content: JSON.stringify({ type: 'card', card, fallbackText: (args.fallbackText as string) || '' }),
     });
 
     log(`send_card: ${id}`);

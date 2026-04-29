@@ -16,10 +16,7 @@ function log(msg: string): void {
   console.error(`[task-script] ${msg}`);
 }
 
-export async function runScript(
-  script: string,
-  taskId: string,
-): Promise<ScriptResult | null> {
+export async function runScript(script: string, taskId: string): Promise<ScriptResult | null> {
   const scriptPath = path.join('/tmp', `task-script-${taskId}.sh`);
   fs.writeFileSync(scriptPath, script, { mode: 0o755 });
 
@@ -27,11 +24,7 @@ export async function runScript(
     execFile(
       'bash',
       [scriptPath],
-      {
-        timeout: SCRIPT_TIMEOUT_MS,
-        maxBuffer: SCRIPT_MAX_BUFFER,
-        env: process.env,
-      },
+      { timeout: SCRIPT_TIMEOUT_MS, maxBuffer: SCRIPT_MAX_BUFFER, env: process.env },
       (error, stdout, stderr) => {
         try {
           fs.unlinkSync(scriptPath);
@@ -58,16 +51,12 @@ export async function runScript(
         try {
           const result = JSON.parse(lastLine);
           if (typeof result.wakeAgent !== 'boolean') {
-            log(
-              `[${taskId}] output missing wakeAgent boolean: ${lastLine.slice(0, 200)}`,
-            );
+            log(`[${taskId}] output missing wakeAgent boolean: ${lastLine.slice(0, 200)}`);
             return resolve(null);
           }
           resolve(result as ScriptResult);
         } catch {
-          log(
-            `[${taskId}] output is not valid JSON: ${lastLine.slice(0, 200)}`,
-          );
+          log(`[${taskId}] output is not valid JSON: ${lastLine.slice(0, 200)}`);
           resolve(null);
         }
       },
@@ -87,9 +76,7 @@ export interface TaskScriptOutcome {
  *   formatter renders it into the prompt.
  * Non-task messages and tasks without scripts pass through unchanged.
  */
-export async function applyPreTaskScripts(
-  messages: MessageInRow[],
-): Promise<TaskScriptOutcome> {
+export async function applyPreTaskScripts(messages: MessageInRow[]): Promise<TaskScriptOutcome> {
   const keep: MessageInRow[] = [];
   const skipped: string[] = [];
 
@@ -107,8 +94,7 @@ export async function applyPreTaskScripts(
       continue;
     }
 
-    const script =
-      typeof content.script === 'string' ? (content.script as string) : null;
+    const script = typeof content.script === 'string' ? (content.script as string) : null;
     if (!script) {
       keep.push(msg);
       continue;

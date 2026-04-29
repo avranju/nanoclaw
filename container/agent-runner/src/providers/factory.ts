@@ -8,9 +8,6 @@ import { getProviderFactory } from './provider-registry.js';
  */
 export type ProviderName = string;
 
-export function createProvider(
-  name: ProviderName,
-  options: ProviderOptions = {},
-): AgentProvider {
+export function createProvider(name: ProviderName, options: ProviderOptions = {}): AgentProvider {
   return getProviderFactory(name)(options);
 }

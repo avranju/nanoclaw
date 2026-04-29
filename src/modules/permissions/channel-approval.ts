@@ -36,20 +36,14 @@
  *   - Approver has no reachable DM.
  *   - Delivery adapter missing.
  */
-import {
-  normalizeOptions,
-  type RawOption,
-} from '../../channels/ask-question.js';
+import { normalizeOptions, type RawOption } from '../../channels/ask-question.js';
 import { getAllAgentGroups } from '../../db/agent-groups.js';
 import { getMessagingGroup } from '../../db/messaging-groups.js';
 import { getDeliveryAdapter } from '../../delivery.js';
 import { log } from '../../log.js';
 import type { InboundEvent } from '../../channels/adapter.js';
 import { pickApprovalDelivery, pickApprover } from '../approvals/primitive.js';
-import {
-  createPendingChannelApproval,
-  hasInFlightChannelApproval,
-} from './db/pending-channel-approvals.js';
+import { createPendingChannelApproval, hasInFlightChannelApproval } from './db/pending-channel-approvals.js';
 
 const APPROVAL_OPTIONS: RawOption[] = [
   { label: 'Approve', selectedLabel: '✅ Wired', value: 'approve' },
@@ -61,9 +55,7 @@ export interface RequestChannelApprovalInput {
   event: InboundEvent;
 }
 
-export async function requestChannelApproval(
-  input: RequestChannelApprovalInput,
-): Promise<void> {
+export async function requestChannelApproval(input: RequestChannelApprovalInput): Promise<void> {
   const { messagingGroupId, event } = input;
 
   // In-flight dedup: don't spam the owner if the same unwired channel
@@ -79,12 +71,9 @@ export async function requestChannelApproval(
   // a richer card later (user picks the target from a list).
   const agentGroups = getAllAgentGroups();
   if (agentGroups.length === 0) {
-    log.warn(
-      'Channel registration skipped — no agent groups configured. Run /init-first-agent.',
-      {
-        messagingGroupId,
-      },
-    );
+    log.warn('Channel registration skipped — no agent groups configured. Run /init-first-agent.', {
+      messagingGroupId,
+    });
     return;
   }
   const target = agentGroups[0];
@@ -112,16 +101,26 @@ export async function requestChannelApproval(
     return;
   }
 
-  const originName =
-    originMg?.name ?? originMg?.platform_id ?? 'an unfamiliar chat';
-  const isGroup = originMg?.is_group === 1;
+  const isGroup = event.message?.isGroup ?? originMg?.is_group === 1;
 
-  const title = isGroup
-    ? '📣 Bot mentioned in new chat'
-    : '💬 New direct message';
+  // Extract sender name from the event content for a human-readable card.
+  let senderName: string | undefined;
+  try {
+    const parsed = JSON.parse(event.message.content) as Record<string, unknown>;
+    senderName = (parsed.senderName ?? parsed.sender) as string | undefined;
+  } catch {
+    // non-critical — fall through to generic wording
+  }
+
+  const title = isGroup ? '📣 Bot mentioned in new chat' : '💬 New direct message';
   const question = isGroup
-    ? `Your agent was mentioned in ${originName} on ${originChannelType}. Wire it to ${target.name} and let it engage?`
-    : `Someone DM'd your agent on ${originChannelType} (${originName}). Wire it to ${target.name} and let it respond?`;
+    ? senderName
+      ? `${senderName} mentioned your agent in a ${originChannelType} channel. Wire it to ${target.name} and let it engage?`
+      : `Your agent was mentioned in a ${originChannelType} channel. Wire it to ${target.name} and let it engage?`
+    : senderName
+      ? `${senderName} DM'd your agent on ${originChannelType}. Wire it to ${target.name} and let it respond?`
+      : `Someone DM'd your agent on ${originChannelType}. Wire it to ${target.name} and let it respond?`;
+  const options = normalizeOptions(APPROVAL_OPTIONS);
 
   createPendingChannelApproval({
     messaging_group_id: messagingGroupId,
@@ -129,16 +128,15 @@ export async function requestChannelApproval(
     original_message: JSON.stringify(event),
     approver_user_id: delivery.userId,
     created_at: new Date().toISOString(),
+    title,
+    options_json: JSON.stringify(options),
   });
 
   const adapter = getDeliveryAdapter();
   if (!adapter) {
-    log.error(
-      'Channel registration row created but no delivery adapter is wired',
-      {
-        messagingGroupId,
-      },
-    );
+    log.error('Channel registration row created but no delivery adapter is wired', {
+      messagingGroupId,
+    });
     return;
   }
 
@@ -156,7 +154,7 @@ export async function requestChannelApproval(
         questionId: messagingGroupId,
         title,
         question,
-        options: normalizeOptions(APPROVAL_OPTIONS),
+        options,
       }),
     );
     log.info('Channel registration card delivered', {

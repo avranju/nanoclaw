@@ -10,16 +10,8 @@ import { DATA_DIR } from './config.js';
 import { migrateGroupsToClaudeLocal } from './claude-md-compose.js';
 import { initDb } from './db/connection.js';
 import { runMigrations } from './db/migrations/index.js';
-import {
-  ensureContainerRuntimeRunning,
-  cleanupOrphans,
-} from './container-runtime.js';
-import {
-  startActiveDeliveryPoll,
-  startSweepDeliveryPoll,
-  setDeliveryAdapter,
-  stopDeliveryPolls,
-} from './delivery.js';
+import { ensureContainerRuntimeRunning, cleanupOrphans } from './container-runtime.js';
+import { startActiveDeliveryPoll, startSweepDeliveryPoll, setDeliveryAdapter, stopDeliveryPolls } from './delivery.js';
 import { startHostSweep, stopHostSweep } from './host-sweep.js';
 import { routeInbound } from './router.js';
 import { log } from './log.js';
@@ -46,16 +38,10 @@ async function dispatchResponse(payload: ResponsePayload): Promise<void> {
       const claimed = await handler(payload);
       if (claimed) return;
     } catch (err) {
-      log.error('Response handler threw', {
-        questionId: payload.questionId,
-        err,
-      });
+      log.error('Response handler threw', { questionId: payload.questionId, err });
     }
   }
-  log.warn('Unclaimed response', {
-    questionId: payload.questionId,
-    value: payload.value,
-  });
+  log.warn('Unclaimed response', { questionId: payload.questionId, value: payload.value });
 }
 
 // Channel barrel — each enabled channel self-registers on import.
@@ -67,11 +53,7 @@ import './channels/index.js';
 import './modules/index.js';
 
 import type { ChannelAdapter, ChannelSetup } from './channels/adapter.js';
-import {
-  initChannelAdapters,
-  teardownChannelAdapters,
-  getChannelAdapter,
-} from './channels/channel-registry.js';
+import { initChannelAdapters, teardownChannelAdapters, getChannelAdapter } from './channels/channel-registry.js';
 
 async function main(): Promise<void> {
   log.info('NanoClaw starting');
@@ -103,12 +85,10 @@ async function main(): Promise<void> {
             content: JSON.stringify(message.content),
             timestamp: message.timestamp,
             isMention: message.isMention,
+            isGroup: message.isGroup,
           },
         }).catch((err) => {
-          log.error('Failed to route inbound message', {
-            channelType: adapter.channelType,
-            err,
-          });
+          log.error('Failed to route inbound message', { channelType: adapter.channelType, err });
         });
       },
       onInboundEvent(event) {
@@ -161,17 +141,9 @@ async function main(): Promise<void> {
         log.warn('No adapter for channel type', { channelType });
         return;
       }
-      return adapter.deliver(platformId, threadId, {
-        kind,
-        content: JSON.parse(content),
-        files,
-      });
+      return adapter.deliver(platformId, threadId, { kind, content: JSON.parse(content), files });
     },
-    async setTyping(
-      channelType: string,
-      platformId: string,
-      threadId: string | null,
-    ): Promise<void> {
+    async setTyping(channelType: string, platformId: string, threadId: string | null): Promise<void> {
       const adapter = getChannelAdapter(channelType);
       await adapter?.setTyping?.(platformId, threadId);
     },

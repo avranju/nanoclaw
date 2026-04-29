@@ -8,11 +8,7 @@
 /** Passed to the adapter at setup time. */
 export interface ChannelSetup {
   /** Called when an inbound message arrives from the platform. */
-  onInbound(
-    platformId: string,
-    threadId: string | null,
-    message: InboundMessage,
-  ): void | Promise<void>;
+  onInbound(platformId: string, threadId: string | null, message: InboundMessage): void | Promise<void>;
 
   /**
    * Called by admin-transport adapters (CLI) that want to route a message to
@@ -60,6 +56,8 @@ export interface InboundEvent {
      * See InboundMessage.isMention for the full explanation.
      */
     isMention?: boolean;
+    /** True when the source is a group/channel thread, false for DMs. */
+    isGroup?: boolean;
   };
   replyTo?: DeliveryAddress;
 }
@@ -85,6 +83,8 @@ export interface InboundMessage {
    * router falls back to text-match against agent_group_name.
    */
   isMention?: boolean;
+  /** True when the source is a group/channel thread, false for DMs. */
+  isGroup?: boolean;
 }
 
 /** A file attachment to deliver alongside a message. */
@@ -130,11 +130,7 @@ export interface ChannelAdapter {
   isConnected(): boolean;
 
   // Outbound delivery — returns the platform message ID if available
-  deliver(
-    platformId: string,
-    threadId: string | null,
-    message: OutboundMessage,
-  ): Promise<string | undefined>;
+  deliver(platformId: string, threadId: string | null, message: OutboundMessage): Promise<string | undefined>;
 
   // Optional
   setTyping?(platformId: string, threadId: string | null): Promise<void>;
@@ -170,20 +166,13 @@ export interface ChannelAdapter {
 }
 
 /** Factory function that creates a channel adapter (returns null if credentials missing). */
-export type ChannelAdapterFactory = () =>
-  | ChannelAdapter
-  | Promise<ChannelAdapter>
-  | null;
+export type ChannelAdapterFactory = () => ChannelAdapter | Promise<ChannelAdapter> | null;
 
 /** Registration entry for a channel adapter. */
 export interface ChannelRegistration {
   factory: ChannelAdapterFactory;
   containerConfig?: {
-    mounts?: Array<{
-      hostPath: string;
-      containerPath: string;
-      readonly: boolean;
-    }>;
+    mounts?: Array<{ hostPath: string; containerPath: string; readonly: boolean }>;
     env?: Record<string, string>;
   };
 }

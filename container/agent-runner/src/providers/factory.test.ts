@@ -14,8 +14,6 @@ describe('createProvider', () => {
   });
 
   it('throws for unknown name', () => {
-    expect(() => createProvider('bogus' as ProviderName)).toThrow(
-      /Unknown provider/,
-    );
+    expect(() => createProvider('bogus' as ProviderName)).toThrow(/Unknown provider/);
   });
 });

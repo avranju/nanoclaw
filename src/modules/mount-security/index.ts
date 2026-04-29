@@ -95,9 +95,7 @@ export function loadMountAllowlist(): MountAllowlist | null {
     }
 
     // Merge with default blocked patterns
-    const mergedBlockedPatterns = [
-      ...new Set([...DEFAULT_BLOCKED_PATTERNS, ...allowlist.blockedPatterns]),
-    ];
+    const mergedBlockedPatterns = [...new Set([...DEFAULT_BLOCKED_PATTERNS, ...allowlist.blockedPatterns])];
     allowlist.blockedPatterns = mergedBlockedPatterns;
 
     cachedAllowlist = allowlist;
@@ -110,13 +108,10 @@ export function loadMountAllowlist(): MountAllowlist | null {
     return cachedAllowlist;
   } catch (err) {
     allowlistLoadError = err instanceof Error ? err.message : String(err);
-    log.error(
-      'Failed to load mount allowlist - additional mounts will be BLOCKED',
-      {
-        path: MOUNT_ALLOWLIST_PATH,
-        error: allowlistLoadError,
-      },
-    );
+    log.error('Failed to load mount allowlist - additional mounts will be BLOCKED', {
+      path: MOUNT_ALLOWLIST_PATH,
+      error: allowlistLoadError,
+    });
     return null;
   }
 }
@@ -150,10 +145,7 @@ function getRealPath(p: string): string | null {
 /**
  * Check if a path matches any blocked pattern
  */
-function matchesBlockedPattern(
-  realPath: string,
-  blockedPatterns: string[],
-): string | null {
+function matchesBlockedPattern(realPath: string, blockedPatterns: string[]): string | null {
   const pathParts = realPath.split(path.sep);
 
   for (const pattern of blockedPatterns) {
@@ -176,10 +168,7 @@ function matchesBlockedPattern(
 /**
  * Check if a real path is under an allowed root
  */
-function findAllowedRoot(
-  realPath: string,
-  allowedRoots: AllowedRoot[],
-): AllowedRoot | null {
+function findAllowedRoot(realPath: string, allowedRoots: AllowedRoot[]): AllowedRoot | null {
   for (const root of allowedRoots) {
     const expandedRoot = expandPath(root.path);
     const realRoot = getRealPath(expandedRoot);
@@ -272,10 +261,7 @@ export function validateMount(mount: AdditionalMount): MountValidationResult {
   }
 
   // Check against blocked patterns
-  const blockedMatch = matchesBlockedPattern(
-    realPath,
-    allowlist.blockedPatterns,
-  );
+  const blockedMatch = matchesBlockedPattern(realPath, allowlist.blockedPatterns);
   if (blockedMatch !== null) {
     return {
       allowed: false,

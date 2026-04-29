@@ -14,17 +14,11 @@
 import { updateContainerConfig } from '../../container-config.js';
 import { buildAgentGroupImage, killContainer } from '../../container-runner.js';
 import { getAgentGroup } from '../../db/agent-groups.js';
-import { getMessagingGroup } from '../../db/messaging-groups.js';
 import { log } from '../../log.js';
 import { writeSessionMessage } from '../../session-manager.js';
 import type { ApprovalHandler } from '../approvals/index.js';
 
-export const applyInstallPackages: ApprovalHandler = async ({
-  session,
-  payload,
-  userId,
-  notify,
-}) => {
+export const applyInstallPackages: ApprovalHandler = async ({ session, payload, userId, notify }) => {
   const agentGroup = getAgentGroup(session.agent_group_id);
   if (!agentGroup) {
     notify('install_packages approved but agent group missing.');
@@ -39,27 +33,19 @@ export const applyInstallPackages: ApprovalHandler = async ({
     ...((payload.apt as string[] | undefined) || []),
     ...((payload.npm as string[] | undefined) || []),
   ].join(', ');
-  log.info('Package install approved', {
-    agentGroupId: session.agent_group_id,
-    userId,
-  });
+  log.info('Package install approved', { agentGroupId: session.agent_group_id, userId });
   try {
     await buildAgentGroupImage(session.agent_group_id);
     killContainer(session.id, 'rebuild applied');
     // Schedule a follow-up prompt a few seconds after kill so the host sweep
     // respawns the container on the new image and the agent verifies + reports.
-    // Use the session's actual user-facing channel so the reply routes to the
-    // user (e.g. Telegram) rather than back to the agent channel.
-    const mg = session.messaging_group_id
-      ? getMessagingGroup(session.messaging_group_id)
-      : null;
     writeSessionMessage(session.agent_group_id, session.id, {
       id: `appr-note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       kind: 'chat',
       timestamp: new Date().toISOString(),
-      platformId: mg?.platform_id ?? session.agent_group_id,
-      channelType: mg?.channel_type ?? 'agent',
-      threadId: session.thread_id,
+      platformId: session.agent_group_id,
+      channelType: 'agent',
+      threadId: null,
       content: JSON.stringify({
         text: `Packages installed (${pkgs}) and container rebuilt. Verify the new packages are available (e.g. run them or check versions) and report the result to the user.`,
         sender: 'system',
@@ -70,26 +56,16 @@ export const applyInstallPackages: ApprovalHandler = async ({
         .replace('T', ' ')
         .replace(/\.\d+Z$/, ''),
     });
-    log.info('Container rebuild completed (bundled with install)', {
-      agentGroupId: session.agent_group_id,
-    });
+    log.info('Container rebuild completed (bundled with install)', { agentGroupId: session.agent_group_id });
   } catch (e) {
     notify(
       `Packages added to config (${pkgs}) but rebuild failed: ${e instanceof Error ? e.message : String(e)}. Tell the user — an admin will need to retry the install_packages request or inspect the build logs.`,
     );
-    log.error('Bundled rebuild failed after install approval', {
-      agentGroupId: session.agent_group_id,
-      err: e,
-    });
+    log.error('Bundled rebuild failed after install approval', { agentGroupId: session.agent_group_id, err: e });
   }
 };
 
-export const applyAddMcpServer: ApprovalHandler = async ({
-  session,
-  payload,
-  userId,
-  notify,
-}) => {
+export const applyAddMcpServer: ApprovalHandler = async ({ session, payload, userId, notify }) => {
   const agentGroup = getAgentGroup(session.agent_group_id);
   if (!agentGroup) {
     notify('add_mcp_server approved but agent group missing.');
@@ -104,11 +80,6 @@ export const applyAddMcpServer: ApprovalHandler = async ({
   });
 
   killContainer(session.id, 'mcp server added');
-  notify(
-    `MCP server "${payload.name}" added. Your container will restart with it on the next message.`,
-  );
-  log.info('MCP server add approved', {
-    agentGroupId: session.agent_group_id,
-    userId,
-  });
+  notify(`MCP server "${payload.name}" added. Your container will restart with it on the next message.`);
+  log.info('MCP server add approved', { agentGroupId: session.agent_group_id, userId });
 };

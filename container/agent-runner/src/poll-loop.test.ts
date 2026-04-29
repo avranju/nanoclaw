@@ -1,11 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 
-import {
-  initTestSessionDb,
-  closeSessionDb,
-  getInboundDb,
-  getOutboundDb,
-} from './db/connection.js';
+import { initTestSessionDb, closeSessionDb, getInboundDb, getOutboundDb } from './db/connection.js';
 import { getPendingMessages, markCompleted } from './db/messages-in.js';
 import { getUndeliveredMessages } from './db/messages-out.js';
 import { formatMessages, extractRouting } from './formatter.js';
@@ -19,24 +14,13 @@ afterEach(() => {
   closeSessionDb();
 });
 
-function insertMessage(
-  id: string,
-  kind: string,
-  content: object,
-  opts?: { processAfter?: string; trigger?: 0 | 1 },
-) {
+function insertMessage(id: string, kind: string, content: object, opts?: { processAfter?: string; trigger?: 0 | 1 }) {
   getInboundDb()
     .prepare(
       `INSERT INTO messages_in (id, kind, timestamp, status, process_after, trigger, content)
      VALUES (?, ?, datetime('now'), 'pending', ?, ?, ?)`,
     )
-    .run(
-      id,
-      kind,
-      opts?.processAfter ?? null,
-      opts?.trigger ?? 1,
-      JSON.stringify(content),
-    );
+    .run(id, kind, opts?.processAfter ?? null, opts?.trigger ?? 1, JSON.stringify(content));
 }
 
 describe('formatter', () => {
@@ -68,22 +52,14 @@ describe('formatter', () => {
   });
 
   it('should format webhook messages', () => {
-    insertMessage('m1', 'webhook', {
-      source: 'github',
-      event: 'push',
-      payload: { ref: 'main' },
-    });
+    insertMessage('m1', 'webhook', { source: 'github', event: 'push', payload: { ref: 'main' } });
     const messages = getPendingMessages();
     const prompt = formatMessages(messages);
     expect(prompt).toContain('[WEBHOOK: github/push]');
   });
 
   it('should format system messages', () => {
-    insertMessage('m1', 'system', {
-      action: 'register_group',
-      status: 'success',
-      result: { id: 'ag-1' },
-    });
+    insertMessage('m1', 'system', { action: 'register_group', status: 'success', result: { id: 'ag-1' } });
     const messages = getPendingMessages();
     const prompt = formatMessages(messages);
     expect(prompt).toContain('[SYSTEM RESPONSE]');
@@ -92,11 +68,7 @@ describe('formatter', () => {
 
   it('should handle mixed kinds', () => {
     insertMessage('m1', 'chat', { sender: 'John', text: 'Hello' });
-    insertMessage('m2', 'system', {
-      action: 'test',
-      status: 'ok',
-      result: null,
-    });
+    insertMessage('m2', 'system', { action: 'test', status: 'ok', result: null });
     const messages = getPendingMessages();
     const prompt = formatMessages(messages);
     expect(prompt).toContain('sender="John"');
@@ -116,18 +88,8 @@ describe('accumulate gate (trigger column)', () => {
   it('getPendingMessages returns both trigger=0 and trigger=1 rows', () => {
     // trigger=0 rides along as context, trigger=1 is the wake-eligible row.
     // The poll loop's gate depends on this data contract.
-    insertMessage(
-      'm1',
-      'chat',
-      { sender: 'A', text: 'chit chat' },
-      { trigger: 0 },
-    );
-    insertMessage(
-      'm2',
-      'chat',
-      { sender: 'B', text: 'actual mention' },
-      { trigger: 1 },
-    );
+    insertMessage('m1', 'chat', { sender: 'A', text: 'chit chat' }, { trigger: 0 });
+    insertMessage('m2', 'chat', { sender: 'B', text: 'actual mention' }, { trigger: 1 });
     const messages = getPendingMessages();
     expect(messages).toHaveLength(2);
     const byId = Object.fromEntries(messages.map((m) => [m.id, m]));
@@ -137,12 +99,7 @@ describe('accumulate gate (trigger column)', () => {
 
   it('trigger=0-only batch: gate predicate `some(trigger===1)` is false', () => {
     insertMessage('m1', 'chat', { sender: 'A', text: 'noise' }, { trigger: 0 });
-    insertMessage(
-      'm2',
-      'chat',
-      { sender: 'B', text: 'more noise' },
-      { trigger: 0 },
-    );
+    insertMessage('m2', 'chat', { sender: 'B', text: 'more noise' }, { trigger: 0 });
     const messages = getPendingMessages();
     // This is the exact predicate the poll loop uses to skip accumulate-only
     // batches — gate should be false, so the loop sleeps without waking the agent.
@@ -150,18 +107,8 @@ describe('accumulate gate (trigger column)', () => {
   });
 
   it('mixed batch: gate is true → loop proceeds, accumulated rows ride along', () => {
-    insertMessage(
-      'm1',
-      'chat',
-      { sender: 'A', text: 'earlier chatter' },
-      { trigger: 0 },
-    );
-    insertMessage(
-      'm2',
-      'chat',
-      { sender: 'B', text: 'the real mention' },
-      { trigger: 1 },
-    );
+    insertMessage('m1', 'chat', { sender: 'A', text: 'earlier chatter' }, { trigger: 0 });
+    insertMessage('m2', 'chat', { sender: 'B', text: 'the real mention' }, { trigger: 1 });
     const messages = getPendingMessages();
     expect(messages.some((m) => m.trigger === 1)).toBe(true);
     // Both messages are present for the formatter → agent sees the prior context.

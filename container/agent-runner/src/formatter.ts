@@ -11,22 +11,8 @@ import { TIMEZONE, formatLocalTime } from './timezone.js';
  */
 export type CommandCategory = 'admin' | 'filtered' | 'passthrough' | 'none';
 
-const ADMIN_COMMANDS = new Set([
-  '/remote-control',
-  '/clear',
-  '/compact',
-  '/context',
-  '/cost',
-  '/files',
-]);
-const FILTERED_COMMANDS = new Set([
-  '/help',
-  '/login',
-  '/logout',
-  '/doctor',
-  '/config',
-  '/start',
-]);
+const ADMIN_COMMANDS = new Set(['/remote-control', '/clear', '/compact', '/context', '/cost', '/files']);
+const FILTERED_COMMANDS = new Set(['/help', '/login', '/logout', '/doctor', '/config', '/start']);
 
 export interface CommandInfo {
   category: CommandCategory;
@@ -82,8 +68,7 @@ export function isClearCommand(msg: MessageInRow): boolean {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function extractSenderId(msg: MessageInRow, content: any): string | null {
-  const raw: string | null =
-    content?.senderId || content?.author?.userId || null;
+  const raw: string | null = content?.senderId || content?.author?.userId || null;
   if (!raw) return null;
   // Already namespaced (e.g. "telegram:123") — use as-is.
   if (raw.includes(':')) return raw;
@@ -134,9 +119,7 @@ export function formatMessages(messages: MessageInRow[]): string {
   if (messages.length === 0) return header;
 
   // Group by kind
-  const chatMessages = messages.filter(
-    (m) => m.kind === 'chat' || m.kind === 'chat-sdk',
-  );
+  const chatMessages = messages.filter((m) => m.kind === 'chat' || m.kind === 'chat-sdk');
   const taskMessages = messages.filter((m) => m.kind === 'task');
   const webhookMessages = messages.filter((m) => m.kind === 'webhook');
   const systemMessages = messages.filter((m) => m.kind === 'system');
@@ -174,17 +157,11 @@ function formatChatMessages(messages: MessageInRow[]): string {
 
 function formatSingleChat(msg: MessageInRow): string {
   const content = parseContent(msg.content);
-  const sender =
-    content.sender ||
-    content.author?.fullName ||
-    content.author?.userName ||
-    'Unknown';
+  const sender = content.sender || content.author?.fullName || content.author?.userName || 'Unknown';
   const time = formatLocalTime(msg.timestamp, TIMEZONE);
   const text = content.text || '';
   const idAttr = msg.seq != null ? ` id="${msg.seq}"` : '';
-  const replyAttr = content.replyTo?.id
-    ? ` reply_to="${escapeXml(String(content.replyTo.id))}"`
-    : '';
+  const replyAttr = content.replyTo?.id ? ` reply_to="${escapeXml(String(content.replyTo.id))}"` : '';
   const replyPrefix = formatReplyContext(content.replyTo);
   const attachmentsSuffix = formatAttachments(content.attachments);
 
@@ -206,11 +183,7 @@ function formatTaskMessage(msg: MessageInRow): string {
   const content = parseContent(msg.content);
   const parts = ['[SCHEDULED TASK]'];
   if (content.scriptOutput) {
-    parts.push(
-      '',
-      'Script output:',
-      JSON.stringify(content.scriptOutput, null, 2),
-    );
+    parts.push('', 'Script output:', JSON.stringify(content.scriptOutput, null, 2));
   }
   parts.push('', 'Instructions:', content.prompt || '');
   return parts.join('\n');
@@ -257,9 +230,7 @@ function formatAttachments(attachments: any[] | undefined): string {
     if (localPath) {
       return `[${type}: ${escapeXml(name)} — saved to ${escapeXml(localPath)}]`;
     }
-    return url
-      ? `[${type}: ${escapeXml(name)} (${escapeXml(url)})]`
-      : `[${type}: ${escapeXml(name)}]`;
+    return url ? `[${type}: ${escapeXml(name)} (${escapeXml(url)})]` : `[${type}: ${escapeXml(name)}]`;
   });
   return '\n' + parts.join('\n');
 }
@@ -274,11 +245,7 @@ function parseContent(json: string): any {
 }
 
 function escapeXml(str: string): string {
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 /**

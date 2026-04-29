@@ -49,10 +49,7 @@ export function formatLocalTime(utcIso: string, timezone: string): string {
 }
 
 function resolveContainerTimezone(): string {
-  const candidates = [
-    process.env.TZ,
-    Intl.DateTimeFormat().resolvedOptions().timeZone,
-  ];
+  const candidates = [process.env.TZ, Intl.DateTimeFormat().resolvedOptions().timeZone];
   for (const tz of candidates) {
     if (tz && isValidTimezone(tz)) return tz;
   }

@@ -48,16 +48,8 @@ export function writeMessageOut(msg: WriteMessageOut): number {
 
   // Read max seq from both DBs to maintain global ordering.
   // Safe: each side only reads the other DB, never writes to it.
-  const maxOut = (
-    outbound
-      .prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM messages_out')
-      .get() as { m: number }
-  ).m;
-  const maxIn = (
-    inbound
-      .prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM messages_in')
-      .get() as { m: number }
-  ).m;
+  const maxOut = (outbound.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM messages_out').get() as { m: number }).m;
+  const maxIn = (inbound.prepare('SELECT COALESCE(MAX(seq), 0) AS m FROM messages_in').get() as { m: number }).m;
   const max = Math.max(maxOut, maxIn);
   const nextSeq = max % 2 === 0 ? max + 1 : max + 2; // next odd
 
@@ -99,25 +91,22 @@ export function getMessageIdBySeq(seq: number): string | null {
   const inbound = getInboundDb();
 
   // Inbound messages: ID is already the platform message ID
-  const inRow = inbound
-    .prepare('SELECT id FROM messages_in WHERE seq = ?')
-    .get(seq) as { id: string } | undefined;
+  const inRow = inbound.prepare('SELECT id FROM messages_in WHERE seq = ?').get(seq) as
+    | { id: string }
+    | undefined;
   if (inRow) return inRow.id;
 
   // Outbound messages: look up platform message ID from delivered table
-  const outRow = getOutboundDb()
-    .prepare('SELECT id FROM messages_out WHERE seq = ?')
-    .get(seq) as { id: string } | undefined;
+  const outRow = getOutboundDb().prepare('SELECT id FROM messages_out WHERE seq = ?').get(seq) as
+    | { id: string }
+    | undefined;
   if (!outRow) return null;
 
   // Check if host has stored the platform message ID after delivery
   const deliveredRow = inbound
-    .prepare(
-      'SELECT platform_message_id FROM delivered WHERE message_out_id = ?',
-    )
+    .prepare('SELECT platform_message_id FROM delivered WHERE message_out_id = ?')
     .get(outRow.id) as { platform_message_id: string | null } | undefined;
-  if (deliveredRow?.platform_message_id)
-    return deliveredRow.platform_message_id;
+  if (deliveredRow?.platform_message_id) return deliveredRow.platform_message_id;
 
   // Fallback to internal ID (edits/reactions on undelivered messages won't work)
   return outRow.id;
@@ -129,36 +118,16 @@ export function getMessageIdBySeq(seq: number): string | null {
  */
 export function getRoutingBySeq(
   seq: number,
-): {
-  channel_type: string | null;
-  platform_id: string | null;
-  thread_id: string | null;
-} | null {
+): { channel_type: string | null; platform_id: string | null; thread_id: string | null } | null {
   const inbound = getInboundDb();
   const inRow = inbound
-    .prepare(
-      'SELECT channel_type, platform_id, thread_id FROM messages_in WHERE seq = ?',
-    )
-    .get(seq) as
-    | {
-        channel_type: string | null;
-        platform_id: string | null;
-        thread_id: string | null;
-      }
-    | undefined;
+    .prepare('SELECT channel_type, platform_id, thread_id FROM messages_in WHERE seq = ?')
+    .get(seq) as { channel_type: string | null; platform_id: string | null; thread_id: string | null } | undefined;
   if (inRow) return inRow;
 
   const outRow = getOutboundDb()
-    .prepare(
-      'SELECT channel_type, platform_id, thread_id FROM messages_out WHERE seq = ?',
-    )
-    .get(seq) as
-    | {
-        channel_type: string | null;
-        platform_id: string | null;
-        thread_id: string | null;
-      }
-    | undefined;
+    .prepare('SELECT channel_type, platform_id, thread_id FROM messages_out WHERE seq = ?')
+    .get(seq) as { channel_type: string | null; platform_id: string | null; thread_id: string | null } | undefined;
   return outRow ?? null;
 }
 

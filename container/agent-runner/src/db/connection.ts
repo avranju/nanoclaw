@@ -57,16 +57,10 @@ export function getOutboundDb(): Database {
       );
     `);
     const cols = new Set(
-      (
-        _outbound.prepare("PRAGMA table_info('session_state')").all() as Array<{
-          name: string;
-        }>
-      ).map((c) => c.name),
+      (_outbound.prepare("PRAGMA table_info('session_state')").all() as Array<{ name: string }>).map((c) => c.name),
     );
     if (!cols.has('updated_at')) {
-      _outbound.exec(
-        `ALTER TABLE session_state ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`,
-      );
+      _outbound.exec(`ALTER TABLE session_state ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''`);
     }
     // container_state: tracks the current tool in flight (if any) so the host
     // sweep can widen its stuck tolerance when Bash is running with a user-
@@ -89,10 +83,7 @@ export function getOutboundDb(): Database {
  * timeout hint when one is available (Bash exposes it in the tool_use input);
  * omit for tools with no declared timeout.
  */
-export function setContainerToolInFlight(
-  tool: string,
-  declaredTimeoutMs: number | null,
-): void {
+export function setContainerToolInFlight(tool: string, declaredTimeoutMs: number | null): void {
   const now = new Date().toISOString();
   getOutboundDb()
     .prepare(
@@ -148,9 +139,7 @@ export function touchHeartbeat(): void {
  * Clearing them lets the new container re-process those messages.
  */
 export function clearStaleProcessingAcks(): void {
-  getOutboundDb()
-    .prepare("DELETE FROM processing_ack WHERE status = 'processing'")
-    .run();
+  getOutboundDb().prepare("DELETE FROM processing_ack WHERE status = 'processing'").run();
 }
 
 /** For tests — creates in-memory DBs with the session schemas. */

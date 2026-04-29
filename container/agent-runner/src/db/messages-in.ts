@@ -67,11 +67,9 @@ export function getPendingMessages(): MessageInRow[] {
 
   // Filter out messages already acknowledged in outbound.db
   const ackedIds = new Set(
-    (
-      outbound.prepare('SELECT message_id FROM processing_ack').all() as Array<{
-        message_id: string;
-      }>
-    ).map((r) => r.message_id),
+    (outbound.prepare('SELECT message_id FROM processing_ack').all() as Array<{ message_id: string }>).map(
+      (r) => r.message_id,
+    ),
   );
 
   // Reverse: we fetched DESC to take the most recent N, but the agent
@@ -114,34 +112,27 @@ export function markFailed(id: string): void {
 
 /** Get a message by ID (read from inbound.db). */
 export function getMessageIn(id: string): MessageInRow | undefined {
-  return getInboundDb()
-    .prepare('SELECT * FROM messages_in WHERE id = ?')
-    .get(id) as MessageInRow | undefined;
+  return getInboundDb().prepare('SELECT * FROM messages_in WHERE id = ?').get(id) as MessageInRow | undefined;
 }
 
 /**
  * Find a pending response to a question (by questionId in content).
  * Reads from inbound.db, checks processing_ack to skip already-handled responses.
  */
-export function findQuestionResponse(
-  questionId: string,
-): MessageInRow | undefined {
+export function findQuestionResponse(questionId: string): MessageInRow | undefined {
   const inbound = getInboundDb();
   const outbound = getOutboundDb();
 
   const response = inbound
-    .prepare(
-      "SELECT * FROM messages_in WHERE status = 'pending' AND content LIKE ?",
-    )
+    .prepare("SELECT * FROM messages_in WHERE status = 'pending' AND content LIKE ?")
     .get(`%"questionId":"${questionId}"%`) as MessageInRow | undefined;
 
   if (!response) return undefined;
 
   // Check it hasn't been acked already
-  const acked = outbound
-    .prepare('SELECT 1 FROM processing_ack WHERE message_id = ?')
-    .get(response.id);
+  const acked = outbound.prepare('SELECT 1 FROM processing_ack WHERE message_id = ?').get(response.id);
   if (acked) return undefined;
 
   return response;
 }
+

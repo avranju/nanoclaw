@@ -42,16 +42,12 @@ function rowToEntry(row: DestRow): DestinationEntry {
 }
 
 export function getAllDestinations(): DestinationEntry[] {
-  const rows = getInboundDb()
-    .prepare('SELECT * FROM destinations ORDER BY name')
-    .all() as DestRow[];
+  const rows = getInboundDb().prepare('SELECT * FROM destinations ORDER BY name').all() as DestRow[];
   return rows.map(rowToEntry);
 }
 
 export function findByName(name: string): DestinationEntry | undefined {
-  const row = getInboundDb()
-    .prepare('SELECT * FROM destinations WHERE name = ?')
-    .get(name) as DestRow | undefined;
+  const row = getInboundDb().prepare('SELECT * FROM destinations WHERE name = ?').get(name) as DestRow | undefined;
   return row ? rowToEntry(row) : undefined;
 }
 
@@ -68,14 +64,10 @@ export function findByRouting(
   const row =
     channelType === 'agent'
       ? (db
-          .prepare(
-            "SELECT * FROM destinations WHERE type = 'agent' AND agent_group_id = ?",
-          )
+          .prepare("SELECT * FROM destinations WHERE type = 'agent' AND agent_group_id = ?")
           .get(platformId) as DestRow | undefined)
       : (db
-          .prepare(
-            "SELECT * FROM destinations WHERE type = 'channel' AND channel_type = ? AND platform_id = ?",
-          )
+          .prepare("SELECT * FROM destinations WHERE type = 'channel' AND channel_type = ? AND platform_id = ?")
           .get(channelType, platformId) as DestRow | undefined);
   return row ? rowToEntry(row) : undefined;
 }
@@ -91,13 +83,7 @@ export function buildSystemPromptAddendum(assistantName?: string): string {
   const sections: string[] = [];
 
   if (assistantName) {
-    sections.push(
-      [
-        '# You are ' + assistantName,
-        '',
-        `Your name is **${assistantName}**. Use it when the channel asks who you are, when introducing yourself, and when signing any message that explicitly calls for a signature.`,
-      ].join('\n'),
-    );
+    sections.push(['# You are ' + assistantName, '', `Your name is **${assistantName}**. Use it when the channel asks who you are, when introducing yourself, and when signing any message that explicitly calls for a signature.`].join('\n'));
   }
 
   sections.push(buildDestinationsSection());
@@ -119,8 +105,7 @@ function buildDestinationsSection(): string {
   // Single-destination shortcut: the agent just writes its response normally.
   if (all.length === 1) {
     const d = all[0];
-    const label =
-      d.displayName && d.displayName !== d.name ? ` (${d.displayName})` : '';
+    const label = d.displayName && d.displayName !== d.name ? ` (${d.displayName})` : '';
     return [
       '## Sending messages',
       '',
@@ -132,30 +117,16 @@ function buildDestinationsSection(): string {
     ].join('\n');
   }
 
-  const lines = [
-    '## Sending messages',
-    '',
-    'You can send messages to the following destinations:',
-    '',
-  ];
+  const lines = ['## Sending messages', '', 'You can send messages to the following destinations:', ''];
   for (const d of all) {
-    const label =
-      d.displayName && d.displayName !== d.name ? ` (${d.displayName})` : '';
+    const label = d.displayName && d.displayName !== d.name ? ` (${d.displayName})` : '';
     lines.push(`- \`${d.name}\`${label}`);
   }
   lines.push('');
-  lines.push(
-    'To send a message, wrap it in a `<message to="name">...</message>` block.',
-  );
-  lines.push(
-    'You can include multiple `<message>` blocks in one response to send to multiple destinations.',
-  );
-  lines.push(
-    'Text outside of `<message>` blocks is scratchpad — logged but not sent anywhere.',
-  );
-  lines.push(
-    'Use `<internal>...</internal>` to make scratchpad intent explicit.',
-  );
+  lines.push('To send a message, wrap it in a `<message to="name">...</message>` block.');
+  lines.push('You can include multiple `<message>` blocks in one response to send to multiple destinations.');
+  lines.push('Text outside of `<message>` blocks is scratchpad — logged but not sent anywhere.');
+  lines.push('Use `<internal>...</internal>` to make scratchpad intent explicit.');
   lines.push('');
   lines.push(
     'To send a message mid-response (e.g., an acknowledgment before a long task), call the `send_message` MCP tool with the `to` parameter set to a destination name.',

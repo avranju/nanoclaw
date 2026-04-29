@@ -25,10 +25,7 @@ function ok(text: string) {
 }
 
 function err(text: string) {
-  return {
-    content: [{ type: 'text' as const, text: `Error: ${text}` }],
-    isError: true,
-  };
+  return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
 }
 
 export const createAgent: McpToolDefinition = {
@@ -39,16 +36,8 @@ export const createAgent: McpToolDefinition = {
     inputSchema: {
       type: 'object' as const,
       properties: {
-        name: {
-          type: 'string',
-          description:
-            'Human-readable name (also becomes your destination name for this agent)',
-        },
-        instructions: {
-          type: 'string',
-          description:
-            'CLAUDE.md content for the new agent (personality, role, instructions)',
-        },
+        name: { type: 'string', description: 'Human-readable name (also becomes your destination name for this agent)' },
+        instructions: { type: 'string', description: 'CLAUDE.md content for the new agent (personality, role, instructions)' },
       },
       required: ['name'],
     },
@@ -70,9 +59,7 @@ export const createAgent: McpToolDefinition = {
     });
 
     log(`create_agent: ${requestId} → "${name}"`);
-    return ok(
-      `Creating agent "${name}". You will be notified when it is ready.`,
-    );
+    return ok(`Creating agent "${name}". You will be notified when it is ready.`);
   },
 };
 

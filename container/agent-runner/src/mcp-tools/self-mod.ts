@@ -29,10 +29,7 @@ function ok(text: string) {
 }
 
 function err(text: string) {
-  return {
-    content: [{ type: 'text' as const, text: `Error: ${text}` }],
-    isError: true,
-  };
+  return { content: [{ type: 'text' as const, text: `Error: ${text}` }], isError: true };
 }
 
 const APT_RE = /^[a-z0-9][a-z0-9._+-]*$/;
@@ -47,43 +44,22 @@ export const installPackages: McpToolDefinition = {
     inputSchema: {
       type: 'object' as const,
       properties: {
-        apt: {
-          type: 'array',
-          items: { type: 'string' },
-          description:
-            'apt packages to install (names only, no version specs or flags)',
-        },
-        npm: {
-          type: 'array',
-          items: { type: 'string' },
-          description:
-            'npm packages to install globally (names only, no version specs)',
-        },
-        reason: {
-          type: 'string',
-          description: 'Why these packages are needed',
-        },
+        apt: { type: 'array', items: { type: 'string' }, description: 'apt packages to install (names only, no version specs or flags)' },
+        npm: { type: 'array', items: { type: 'string' }, description: 'npm packages to install globally (names only, no version specs)' },
+        reason: { type: 'string', description: 'Why these packages are needed' },
       },
     },
   },
   async handler(args) {
     const apt = (args.apt as string[]) || [];
     const npm = (args.npm as string[]) || [];
-    if (apt.length === 0 && npm.length === 0)
-      return err('At least one apt or npm package is required');
-    if (apt.length + npm.length > MAX_PACKAGES)
-      return err(`Maximum ${MAX_PACKAGES} packages per request`);
+    if (apt.length === 0 && npm.length === 0) return err('At least one apt or npm package is required');
+    if (apt.length + npm.length > MAX_PACKAGES) return err(`Maximum ${MAX_PACKAGES} packages per request`);
 
     const invalidApt = apt.find((p) => !APT_RE.test(p));
-    if (invalidApt)
-      return err(
-        `Invalid apt package name: "${invalidApt}". Only lowercase letters, digits, and ._+- allowed.`,
-      );
+    if (invalidApt) return err(`Invalid apt package name: "${invalidApt}". Only lowercase letters, digits, and ._+- allowed.`);
     const invalidNpm = npm.find((p) => !NPM_RE.test(p));
-    if (invalidNpm)
-      return err(
-        `Invalid npm package name: "${invalidNpm}". No version specs or shell characters.`,
-      );
+    if (invalidNpm) return err(`Invalid npm package name: "${invalidNpm}". No version specs or shell characters.`);
 
     const requestId = generateId();
     writeMessageOut({
@@ -97,12 +73,8 @@ export const installPackages: McpToolDefinition = {
       }),
     });
 
-    log(
-      `install_packages: ${requestId} → apt=[${apt.join(',')}] npm=[${npm.join(',')}]`,
-    );
-    return ok(
-      `Package install request submitted. You will be notified when admin approves or rejects.`,
-    );
+    log(`install_packages: ${requestId} → apt=[${apt.join(',')}] npm=[${npm.join(',')}]`);
+    return ok(`Package install request submitted. You will be notified when admin approves or rejects.`);
   },
 };
 
@@ -114,23 +86,10 @@ export const addMcpServer: McpToolDefinition = {
     inputSchema: {
       type: 'object' as const,
       properties: {
-        name: {
-          type: 'string',
-          description: 'MCP server name (unique identifier)',
-        },
-        command: {
-          type: 'string',
-          description: 'Command to run the MCP server',
-        },
-        args: {
-          type: 'array',
-          items: { type: 'string' },
-          description: 'Command arguments',
-        },
-        env: {
-          type: 'object',
-          description: 'Environment variables for the server',
-        },
+        name: { type: 'string', description: 'MCP server name (unique identifier)' },
+        command: { type: 'string', description: 'Command to run the MCP server' },
+        args: { type: 'array', items: { type: 'string' }, description: 'Command arguments' },
+        env: { type: 'object', description: 'Environment variables for the server' },
       },
       required: ['name', 'command'],
     },
@@ -154,9 +113,7 @@ export const addMcpServer: McpToolDefinition = {
     });
 
     log(`add_mcp_server: ${requestId} → "${name}" (${command})`);
-    return ok(
-      `MCP server request submitted. You will be notified when admin approves or rejects.`,
-    );
+    return ok(`MCP server request submitted. You will be notified when admin approves or rejects.`);
   },
 };
 

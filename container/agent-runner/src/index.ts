@@ -51,9 +51,7 @@ async function main(): Promise<void> {
   // /workspace/agent/CLAUDE.md — the composed entry imports the shared
   // base (/app/CLAUDE.md) and each enabled module's fragment. Per-group
   // memory lives in /workspace/agent/CLAUDE.local.md (auto-loaded).
-  const instructions = buildSystemPromptAddendum(
-    config.assistantName || undefined,
-  );
+  const instructions = buildSystemPromptAddendum(config.assistantName || undefined);
 
   // Discover additional directories mounted at /workspace/extra/*
   const additionalDirectories: string[] = [];
@@ -75,10 +73,7 @@ async function main(): Promise<void> {
   const mcpServerPath = path.join(__dirname, 'mcp-tools', 'index.ts');
 
   // Build MCP servers config: nanoclaw built-in + any from container.json
-  const mcpServers: Record<
-    string,
-    { command: string; args: string[]; env: Record<string, string> }
-  > = {
+  const mcpServers: Record<string, { command: string; args: string[]; env: Record<string, string> }> = {
     nanoclaw: {
       command: 'bun',
       args: ['run', mcpServerPath],
@@ -95,12 +90,12 @@ async function main(): Promise<void> {
     assistantName: config.assistantName || undefined,
     mcpServers,
     env: { ...process.env },
-    additionalDirectories:
-      additionalDirectories.length > 0 ? additionalDirectories : undefined,
+    additionalDirectories: additionalDirectories.length > 0 ? additionalDirectories : undefined,
   });
 
   await runPollLoop({
     provider,
+    providerName,
     cwd: CWD,
     systemContext: { instructions },
   });

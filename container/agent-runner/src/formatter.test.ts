@@ -11,11 +11,7 @@
  */
 import { describe, it, expect, beforeEach, afterEach } from 'bun:test';
 
-import {
-  initTestSessionDb,
-  closeSessionDb,
-  getInboundDb,
-} from './db/connection.js';
+import { initTestSessionDb, closeSessionDb, getInboundDb } from './db/connection.js';
 import { getPendingMessages } from './db/messages-in.js';
 import { formatMessages, stripInternalTags } from './formatter.js';
 import { TIMEZONE } from './timezone.js';
@@ -69,12 +65,7 @@ describe('context timezone header', () => {
 describe('timestamp formatting', () => {
   it('renders time via formatLocalTime (user TZ)', () => {
     // 2026-06-15T12:00:00Z — timezone-agnostic assertions (year is stable)
-    insertMessage(
-      'm1',
-      'chat',
-      { sender: 'Alice', text: 'hi' },
-      { timestamp: '2026-06-15T12:00:00.000Z' },
-    );
+    insertMessage('m1', 'chat', { sender: 'Alice', text: 'hi' }, { timestamp: '2026-06-15T12:00:00.000Z' });
     const result = formatMessages(getPendingMessages());
     // formatLocalTime's format in en-US contains the year and a month abbrev
     expect(result).toContain('2026');
@@ -83,12 +74,7 @@ describe('timestamp formatting', () => {
 
   it('uses 12-hour AM/PM format', () => {
     // 15:30 UTC — some hour will show with AM or PM depending on TZ
-    insertMessage(
-      'm1',
-      'chat',
-      { sender: 'Alice', text: 'hi' },
-      { timestamp: '2026-06-15T15:30:00.000Z' },
-    );
+    insertMessage('m1', 'chat', { sender: 'Alice', text: 'hi' }, { timestamp: '2026-06-15T15:30:00.000Z' });
     const result = formatMessages(getPendingMessages());
     expect(result).toMatch(/(AM|PM)/);
   });
@@ -103,9 +89,7 @@ describe('reply_to + quoted_message rendering', () => {
     });
     const result = formatMessages(getPendingMessages());
     expect(result).toContain('reply_to="42"');
-    expect(result).toContain(
-      '<quoted_message from="Bob">Are you coming tonight?</quoted_message>',
-    );
+    expect(result).toContain('<quoted_message from="Bob">Are you coming tonight?</quoted_message>');
     expect(result).toContain('Yes, on my way!</message>');
   });
 
@@ -131,11 +115,7 @@ describe('reply_to + quoted_message rendering', () => {
     insertMessage('m1', 'chat', {
       sender: 'Alice',
       text: 'reply',
-      replyTo: {
-        id: '1',
-        sender: 'A & B',
-        text: '<script>alert("xss")</script>',
-      },
+      replyTo: { id: '1', sender: 'A & B', text: '<script>alert("xss")</script>' },
     });
     const result = formatMessages(getPendingMessages());
     expect(result).toContain('from="A &amp; B"');
@@ -152,29 +132,23 @@ describe('XML escaping', () => {
     });
     const result = formatMessages(getPendingMessages());
     expect(result).toContain('sender="A &amp; B &lt;Co&gt;"');
-    expect(result).toContain(
-      '&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;',
-    );
+    expect(result).toContain('&lt;script&gt;alert(&quot;xss&quot;)&lt;/script&gt;');
   });
 });
 
 describe('stripInternalTags', () => {
   it('strips single-line internal tags and trims', () => {
-    expect(stripInternalTags('hello <internal>secret</internal> world')).toBe(
+    expect(stripInternalTags('hello <internal>secret</internal> world')).toBe('hello  world');
+  });
+
+  it('strips multi-line internal tags', () => {
+    expect(stripInternalTags('hello <internal>\nsecret\nstuff\n</internal> world')).toBe(
       'hello  world',
     );
   });
 
-  it('strips multi-line internal tags', () => {
-    expect(
-      stripInternalTags('hello <internal>\nsecret\nstuff\n</internal> world'),
-    ).toBe('hello  world');
-  });
-
   it('strips multiple internal tag blocks', () => {
-    expect(
-      stripInternalTags('<internal>a</internal>hello<internal>b</internal>'),
-    ).toBe('hello');
+    expect(stripInternalTags('<internal>a</internal>hello<internal>b</internal>')).toBe('hello');
   });
 
   it('returns empty string when input is only internal tags', () => {
@@ -186,8 +160,8 @@ describe('stripInternalTags', () => {
   });
 
   it('preserves content that surrounds internal tags', () => {
-    expect(
-      stripInternalTags('<internal>thinking</internal>The answer is 42'),
-    ).toBe('The answer is 42');
+    expect(stripInternalTags('<internal>thinking</internal>The answer is 42')).toBe(
+      'The answer is 42',
+    );
   });
 });

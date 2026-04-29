@@ -21,11 +21,7 @@ import { SqliteStateAdapter } from '../state-sqlite.js';
 import { registerWebhookAdapter } from '../webhook-server.js';
 import { getAskQuestionRender } from '../db/sessions.js';
 import { normalizeOptions, type NormalizedOption } from './ask-question.js';
-import type {
-  ChannelAdapter,
-  ChannelSetup,
-  InboundMessage,
-} from './adapter.js';
+import type { ChannelAdapter, ChannelSetup, InboundMessage } from './adapter.js';
 
 /** Adapter with optional gateway support (e.g., Discord). */
 interface GatewayAdapter extends Adapter {
@@ -45,9 +41,7 @@ export interface ReplyContext {
 
 /** Extract reply context from a platform-specific raw message. Return null if no reply. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type ReplyContextExtractor = (
-  raw: Record<string, any>,
-) => ReplyContext | null;
+export type ReplyContextExtractor = (raw: Record<string, any>) => ReplyContext | null;
 
 export interface ChatSdkBridgeConfig {
   adapter: Adapter;
@@ -87,6 +81,26 @@ export interface ChatSdkBridgeConfig {
  * chunk boundary will render as two independent blocks on the receiving
  * platform, which is the same behavior as manually re-opening a fence.
  */
+/**
+ * Decode the actual option value from a button callback. Buttons are encoded
+ * with an integer index (to keep under Telegram's 64-byte callback_data cap),
+ * and the real value is looked up via `getAskQuestionRender(questionId)`.
+ * Falls back to treating the tail as a literal value so old in-flight cards
+ * (encoded before this shortening landed) still resolve.
+ */
+function resolveSelectedOption(
+  render: { options: NormalizedOption[] } | undefined,
+  eventValue: string | undefined,
+  tail: string | undefined,
+): string {
+  const candidate = eventValue ?? tail ?? '';
+  if (render && /^\d+$/.test(candidate)) {
+    const idx = Number(candidate);
+    if (render.options[idx]) return render.options[idx].value;
+  }
+  return candidate;
+}
+
 export function splitForLimit(text: string, limit: number): string[] {
   if (text.length <= limit) return [text];
   const chunks: string[] = [];
@@ -103,12 +117,9 @@ export function splitForLimit(text: string, limit: number): string[] {
   return chunks;
 }
 
-export function createChatSdkBridge(
-  config: ChatSdkBridgeConfig,
-): ChannelAdapter {
+export function createChatSdkBridge(config: ChatSdkBridgeConfig): ChannelAdapter {
   const { adapter } = config;
-  const transformText = (t: string): string =>
-    config.transformOutboundText ? config.transformOutboundText(t) : t;
+  const transformText = (t: string): string => (config.transformOutboundText ? config.transformOutboundText(t) : t);
   let chat: Chat;
   let state: SqliteStateAdapter;
   let setupConfig: ChannelSetup;
@@ -117,6 +128,7 @@ export function createChatSdkBridge(
   async function messageToInbound(
     message: ChatMessage,
     isMention: boolean,
+    isGroup?: boolean,
   ): Promise<InboundMessage> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const serialized = message.toJSON() as Record<string, any>;
@@ -150,18 +162,14 @@ export function createChatSdkBridge(
     // Extract reply context via platform-specific hook
     if (config.extractReplyContext && message.raw) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const replyTo = config.extractReplyContext(
-        message.raw as Record<string, any>,
-      );
+      const replyTo = config.extractReplyContext(message.raw as Record<string, any>);
       if (replyTo) serialized.replyTo = replyTo;
     }
 
     // Project chat-sdk's nested author into the flat sender fields the router
     // expects (see src/router.ts extractAndUpsertUser). Native adapters already
     // populate these directly; this brings chat-sdk adapters in line.
-    const author = serialized.author as
-      | { userId?: string; fullName?: string; userName?: string }
-      | undefined;
+    const author = serialized.author as { userId?: string; fullName?: string; userName?: string } | undefined;
     if (author) {
       const name = author.fullName ?? author.userName;
       serialized.senderId = author.userId;
@@ -178,6 +186,7 @@ export function createChatSdkBridge(
       content: serialized,
       timestamp: message.metadata.dateSent.toISOString(),
       isMention,
+      isGroup,
     };
   }
 
@@ -214,18 +223,14 @@ export function createChatSdkBridge(
         await setupConfig.onInbound(
           channelId,
           thread.id,
-          await messageToInbound(message, message.isMention === true),
+          await messageToInbound(message, message.isMention === true, true),
         );
       });
 
       // @mention in an unsubscribed thread — SDK-confirmed bot mention.
       chat.onNewMention(async (thread, message) => {
         const channelId = adapter.channelIdFromThreadId(thread.id);
-        await setupConfig.onInbound(
-          channelId,
-          thread.id,
-          await messageToInbound(message, true),
-        );
+        await setupConfig.onInbound(channelId, thread.id, await messageToInbound(message, true, true));
       });
 
       // DMs — by definition addressed to the bot. Thread id flows through
@@ -237,17 +242,10 @@ export function createChatSdkBridge(
         log.info('Inbound DM received', {
           adapter: adapter.name,
           channelId,
-          sender:
-            (message.author as any)?.fullName ??
-            (message.author as any)?.userId ??
-            'unknown',
+          sender: (message.author as any)?.fullName ?? (message.author as any)?.userId ?? 'unknown',
           threadId: thread.id,
         });
-        await setupConfig.onInbound(
-          channelId,
-          thread.id,
-          await messageToInbound(message, true),
-        );
+        await setupConfig.onInbound(channelId, thread.id, await messageToInbound(message, true, false));
       });
 
       // Plain messages in unsubscribed threads.
@@ -262,11 +260,7 @@ export function createChatSdkBridge(
       // flood gate.
       chat.onNewMessage(/./, async (thread, message) => {
         const channelId = adapter.channelIdFromThreadId(thread.id);
-        await setupConfig.onInbound(
-          channelId,
-          thread.id,
-          await messageToInbound(message, false),
-        );
+        await setupConfig.onInbound(channelId, thread.id, await messageToInbound(message, false, true));
       });
 
       // Handle button clicks (ask_user_question)
@@ -275,15 +269,18 @@ export function createChatSdkBridge(
         const parts = event.actionId.split(':');
         if (parts.length < 3) return;
         const questionId = parts[1];
-        const selectedOption = event.value || '';
+        const tail = parts.slice(2).join(':');
         const userId = event.user?.userId || '';
 
         // Resolve render metadata BEFORE dispatching onAction (which deletes the row).
         const render = getAskQuestionRender(questionId);
+        // New format: button id/value is an integer index into options (kept
+        // short to fit Telegram's 64-byte callback_data cap). Old format:
+        // the full value is embedded in actionId/value directly.
+        const selectedOption = resolveSelectedOption(render, event.value, tail);
         const title = render?.title ?? '❓ Question';
         const matched = render?.options.find((o) => o.value === selectedOption);
-        const selectedLabel =
-          matched?.selectedLabel ?? selectedOption ?? '(clicked)';
+        const selectedLabel = matched?.selectedLabel ?? selectedOption ?? '(clicked)';
 
         // Update the card to show the selected answer and remove buttons
         try {
@@ -306,11 +303,7 @@ export function createChatSdkBridge(
         gatewayAbort = new AbortController();
 
         // Start local HTTP server to receive forwarded Gateway events (including interactions)
-        const webhookUrl = await startLocalWebhookServer(
-          gatewayAdapter,
-          setupConfig,
-          config.botToken,
-        );
+        const webhookUrl = await startLocalWebhookServer(gatewayAdapter, setupConfig, config.botToken);
 
         const startGateway = () => {
           if (gatewayAbort?.signal.aborted) return;
@@ -332,18 +325,13 @@ export function createChatSdkBridge(
               listenerPromise
                 .then(() => {
                   if (!gatewayAbort?.signal.aborted) {
-                    log.info('Gateway listener expired, restarting', {
-                      adapter: adapter.name,
-                    });
+                    log.info('Gateway listener expired, restarting', { adapter: adapter.name });
                     startGateway();
                   }
                 })
                 .catch((err) => {
                   if (!gatewayAbort?.signal.aborted) {
-                    log.error('Gateway listener error, restarting in 5s', {
-                      adapter: adapter.name,
-                      err,
-                    });
+                    log.error('Gateway listener error, restarting in 5s', { adapter: adapter.name, err });
                     setTimeout(startGateway, 5000);
                   }
                 });
@@ -360,11 +348,7 @@ export function createChatSdkBridge(
       log.info('Chat SDK bridge initialized', { adapter: adapter.name });
     },
 
-    async deliver(
-      platformId: string,
-      threadId: string | null,
-      message,
-    ): Promise<string | undefined> {
+    async deliver(platformId: string, threadId: string | null, message): Promise<string | undefined> {
       // platformId is already in the adapter's encoded format (e.g. "telegram:6037840640",
       // "discord:guildId:channelId") — use it directly as the thread ID
       const tid = threadId ?? platformId;
@@ -372,55 +356,38 @@ export function createChatSdkBridge(
 
       if (content.operation === 'edit' && content.messageId) {
         await adapter.editMessage(tid, content.messageId as string, {
-          markdown: transformText(
-            (content.text as string) || (content.markdown as string) || '',
-          ),
+          markdown: transformText((content.text as string) || (content.markdown as string) || ''),
         });
         return;
       }
 
-      if (
-        content.operation === 'reaction' &&
-        content.messageId &&
-        content.emoji
-      ) {
-        await adapter.addReaction(
-          tid,
-          content.messageId as string,
-          content.emoji as string,
-        );
+      if (content.operation === 'reaction' && content.messageId && content.emoji) {
+        await adapter.addReaction(tid, content.messageId as string, content.emoji as string);
         return;
       }
 
       // Ask question card — render as Card with buttons
-      if (
-        content.type === 'ask_question' &&
-        content.questionId &&
-        content.options
-      ) {
+      if (content.type === 'ask_question' && content.questionId && content.options) {
         const questionId = content.questionId as string;
         const title = content.title as string;
         const question = content.question as string;
         if (!title) {
-          log.error('ask_question missing required title — skipping delivery', {
-            questionId,
-          });
+          log.error('ask_question missing required title — skipping delivery', { questionId });
           return;
         }
-        const options: NormalizedOption[] = normalizeOptions(
-          content.options as never,
-        );
+        const options: NormalizedOption[] = normalizeOptions(content.options as never);
         const card = Card({
           title,
           children: [
             CardText(question),
             Actions(
-              options.map((opt) =>
-                Button({
-                  id: `ncq:${questionId}:${opt.value}`,
-                  label: opt.label,
-                  value: opt.value,
-                }),
+              // Encode button id/value with the option index rather than the
+              // full value. Telegram caps callback_data at 64 bytes, and
+              // long values (e.g. ISO datetimes, URLs) push the JSON payload
+              // well past that. The onAction handlers resolve the index back
+              // to the real value via getAskQuestionRender(questionId).
+              options.map((opt, idx) =>
+                Button({ id: `ncq:${questionId}:${idx}`, label: opt.label, value: String(idx) }),
               ),
             ),
           ],
@@ -437,12 +404,10 @@ export function createChatSdkBridge(
       const text = rawText ? transformText(rawText) : rawText;
       if (text) {
         // Attach files if present (FileUpload format: { data, filename })
-        const fileUploads = message.files?.map(
-          (f: { data: Buffer; filename: string }) => ({
-            data: f.data,
-            filename: f.filename,
-          }),
-        );
+        const fileUploads = message.files?.map((f: { data: Buffer; filename: string }) => ({
+          data: f.data,
+          filename: f.filename,
+        }));
         // Split if over the adapter's max length. Files ride on the first
         // chunk so the head of the reply still carries them.
         const chunks =
@@ -455,25 +420,18 @@ export function createChatSdkBridge(
           const attachFiles = i === 0 && fileUploads && fileUploads.length > 0;
           const result = await adapter.postMessage(
             tid,
-            attachFiles
-              ? { markdown: chunk, files: fileUploads }
-              : { markdown: chunk },
+            attachFiles ? { markdown: chunk, files: fileUploads } : { markdown: chunk },
           );
           if (i === 0) firstId = result?.id;
         }
         return firstId;
       } else if (message.files && message.files.length > 0) {
         // Files only, no text
-        const fileUploads = message.files.map(
-          (f: { data: Buffer; filename: string }) => ({
-            data: f.data,
-            filename: f.filename,
-          }),
-        );
-        const result = await adapter.postMessage(tid, {
-          markdown: '',
-          files: fileUploads,
-        });
+        const fileUploads = message.files.map((f: { data: Buffer; filename: string }) => ({
+          data: f.data,
+          filename: f.filename,
+        }));
+        const result = await adapter.postMessage(tid, { markdown: '', files: fileUploads });
         return result?.id;
       }
     },
@@ -580,61 +538,53 @@ async function handleForwardedEvent(
     const interaction = event.data;
     // type 3 = MessageComponent (button/select)
     if (interaction.type === 3) {
-      const customId = (interaction.data as Record<string, unknown>)
-        ?.custom_id as string;
-      const user = (interaction.member as Record<string, unknown>)?.user as
-        | Record<string, string>
-        | undefined;
+      const customId = (interaction.data as Record<string, unknown>)?.custom_id as string;
+      // In guilds the clicker is at interaction.member.user; in DMs it's interaction.user directly.
+      const user =
+        ((interaction.member as Record<string, unknown>)?.user as Record<string, string> | undefined) ??
+        (interaction.user as Record<string, string> | undefined);
       const interactionId = interaction.id as string;
       const interactionToken = interaction.token as string;
 
       // Parse the selected option from custom_id
       let questionId: string | undefined;
-      let selectedOption: string | undefined;
+      let tail: string | undefined;
       if (customId?.startsWith('ncq:')) {
         const colonIdx = customId.indexOf(':', 4); // after "ncq:"
         if (colonIdx !== -1) {
           questionId = customId.slice(4, colonIdx);
-          selectedOption = customId.slice(colonIdx + 1);
+          tail = customId.slice(colonIdx + 1);
         }
       }
 
       // Update the card to show the selected answer and remove buttons
       const originalEmbeds =
-        ((interaction.message as Record<string, unknown>)?.embeds as Array<
-          Record<string, unknown>
-        >) || [];
-      const originalDescription =
-        (originalEmbeds[0]?.description as string) || '';
+        ((interaction.message as Record<string, unknown>)?.embeds as Array<Record<string, unknown>>) || [];
+      const originalDescription = (originalEmbeds[0]?.description as string) || '';
       const render = questionId ? getAskQuestionRender(questionId) : undefined;
-      const cardTitle =
-        render?.title ??
-        ((originalEmbeds[0]?.title as string) || '❓ Question');
-      const matchedOpt = render?.options.find(
-        (o) => o.value === selectedOption,
-      );
-      const selectedLabel =
-        matchedOpt?.selectedLabel ?? selectedOption ?? customId;
+      // Discord custom_id mirrors the new index-based encoding (see Button
+      // construction). Decode back to the real option value for downstream.
+      const selectedOption = resolveSelectedOption(render, tail, tail);
+      const cardTitle = render?.title ?? ((originalEmbeds[0]?.title as string) || '❓ Question');
+      const matchedOpt = render?.options.find((o) => o.value === selectedOption);
+      const selectedLabel = matchedOpt?.selectedLabel ?? selectedOption ?? customId;
       try {
-        await fetch(
-          `https://discord.com/api/v10/interactions/${interactionId}/${interactionToken}/callback`,
-          {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 7, // UPDATE_MESSAGE — acknowledge + update in one call
-              data: {
-                embeds: [
-                  {
-                    title: cardTitle,
-                    description: `${originalDescription}\n\n${selectedLabel}`,
-                  },
-                ],
-                components: [], // remove buttons
-              },
-            }),
-          },
-        );
+        await fetch(`https://discord.com/api/v10/interactions/${interactionId}/${interactionToken}/callback`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            type: 7, // UPDATE_MESSAGE — acknowledge + update in one call
+            data: {
+              embeds: [
+                {
+                  title: cardTitle,
+                  description: `${originalDescription}\n\n${selectedLabel}`,
+                },
+              ],
+              components: [], // remove buttons
+            },
+          }),
+        });
       } catch (err) {
         log.error('Failed to update interaction', { err });
       }

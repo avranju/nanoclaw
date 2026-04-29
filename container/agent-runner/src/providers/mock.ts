@@ -1,11 +1,5 @@
 import { registerProvider } from './provider-registry.js';
-import type {
-  AgentProvider,
-  AgentQuery,
-  ProviderEvent,
-  ProviderOptions,
-  QueryInput,
-} from './types.js';
+import type { AgentProvider, AgentQuery, ProviderEvent, ProviderOptions, QueryInput } from './types.js';
 
 /**
  * Mock provider for testing. Returns canned responses.
@@ -16,13 +10,8 @@ export class MockProvider implements AgentProvider {
 
   private responseFactory: (prompt: string) => string;
 
-  constructor(
-    _options: ProviderOptions = {},
-    responseFactory?: (prompt: string) => string,
-  ) {
-    this.responseFactory =
-      responseFactory ??
-      ((prompt) => `Mock response to: ${prompt.slice(0, 100)}`);
+  constructor(_options: ProviderOptions = {}, responseFactory?: (prompt: string) => string) {
+    this.responseFactory = responseFactory ?? ((prompt) => `Mock response to: ${prompt.slice(0, 100)}`);
   }
 
   isSessionInvalid(_err: unknown): boolean {

@@ -29,18 +29,10 @@ import {
 import { findSessionForAgent } from './db/sessions.js';
 import { startTypingRefresh } from './modules/typing/index.js';
 import { log } from './log.js';
-import {
-  resolveSession,
-  writeSessionMessage,
-  writeOutboundDirect,
-} from './session-manager.js';
+import { resolveSession, writeSessionMessage, writeOutboundDirect } from './session-manager.js';
 import { wakeContainer } from './container-runner.js';
 import { getSession } from './db/sessions.js';
-import type {
-  AgentGroup,
-  MessagingGroup,
-  MessagingGroupAgent,
-} from './types.js';
+import type { AgentGroup, MessagingGroup, MessagingGroupAgent } from './types.js';
 import type { InboundEvent } from './channels/adapter.js';
 
 function generateId(): string {
@@ -75,9 +67,7 @@ export function setSenderResolver(fn: SenderResolverFn): void {
  * own `dropped_messages` row on refusal (structural drops are already
  * recorded by core before the gate runs).
  */
-export type AccessGateResult =
-  | { allowed: true }
-  | { allowed: false; reason: string };
+export type AccessGateResult = { allowed: true } | { allowed: false; reason: string };
 
 export type AccessGateFn = (
   event: InboundEvent,
@@ -128,10 +118,7 @@ export function setSenderScopeGate(fn: SenderScopeGateFn): void {
  * Registered by the permissions module. Without the module the router
  * silently records the drop with reason='no_agent_wired' and moves on.
  */
-export type ChannelRequestGateFn = (
-  mg: MessagingGroup,
-  event: InboundEvent,
-) => Promise<void>;
+export type ChannelRequestGateFn = (mg: MessagingGroup, event: InboundEvent) => Promise<void>;
 
 let channelRequestGate: ChannelRequestGateFn | null = null;
 
@@ -142,11 +129,7 @@ export function setChannelRequestGate(fn: ChannelRequestGateFn): void {
   channelRequestGate = fn;
 }
 
-function safeParseContent(raw: string): {
-  text?: string;
-  sender?: string;
-  senderId?: string;
-} {
+function safeParseContent(raw: string): { text?: string; sender?: string; senderId?: string } {
   try {
     return JSON.parse(raw);
   } catch {
@@ -172,14 +155,14 @@ export async function routeInbound(event: InboundEvent): Promise<void> {
   //    single query. Cheap short-circuit for the common "unwired channel"
   //    case — one DB read and we're out, no auto-create, no sender
   //    resolution, no log spam.
-  const found = getMessagingGroupWithAgentCount(
-    event.channelType,
-    event.platformId,
-  );
+  const found = getMessagingGroupWithAgentCount(event.channelType, event.platformId);
 
   let mg: MessagingGroup;
   let agentCount: number;
   if (!found) {
+    // No messaging_groups row. Auto-create only when the message warrants
+    // attention (the bot was addressed — @mention or DM). Plain chatter in
+    // channels we merely sit in stays silent — no row, no DB writes.
     if (!isMention) return;
     const mgId = `mg-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     mg = {
@@ -187,7 +170,7 @@ export async function routeInbound(event: InboundEvent): Promise<void> {
       channel_type: event.channelType,
       platform_id: event.platformId,
       name: null,
-      is_group: 0,
+      is_group: event.message.isGroup ? 1 : 0,
       unknown_sender_policy: 'request_approval',
       denied_at: null,
       created_at: new Date().toISOString(),
@@ -228,21 +211,19 @@ export async function routeInbound(event: InboundEvent): Promise<void> {
     });
 
     if (channelRequestGate) {
+      // Fire-and-forget escalation. The gate is expected to build a card,
+      // persist pending_channel_approvals, and replay the event via
+      // routeInbound after approval. Errors are logged internally — the
+      // user's message still stays dropped here either way.
       void channelRequestGate(mg, event).catch((err) =>
-        log.error('Channel-request gate threw', {
-          messagingGroupId: mg.id,
-          err,
-        }),
+        log.error('Channel-request gate threw', { messagingGroupId: mg.id, err }),
       );
     } else {
-      log.warn(
-        'MESSAGE DROPPED — no agent groups wired and no channel-request gate registered',
-        {
-          messagingGroupId: mg.id,
-          channelType: event.channelType,
-          platformId: event.platformId,
-        },
-      );
+      log.warn('MESSAGE DROPPED — no agent groups wired and no channel-request gate registered', {
+        messagingGroupId: mg.id,
+        channelType: event.channelType,
+        platformId: event.platformId,
+      });
     }
     return;
   }
@@ -257,7 +238,17 @@ export async function routeInbound(event: InboundEvent): Promise<void> {
   const agents = getMessagingGroupAgents(mg.id);
 
   // 4. Fan-out: evaluate each wired agent independently against engage_mode,
-  //    sender_scope, and access gate.
+  //    sender_scope, and access gate. An agent that engages gets its own
+  //    session and container wake. An agent that declines but has
+  //    ignored_message_policy='accumulate' still gets the message stored in
+  //    its session (trigger=0) so the context is available when it does
+  //    engage later. Drop policy = skip silently.
+  //
+  //    Subscribe (for mention-sticky wirings on threaded platforms) fires
+  //    once per message from this loop — the first engaging mention-sticky
+  //    wiring triggers adapter.subscribe(...); subsequent wirings don't
+  //    re-subscribe (chat.subscribe is idempotent anyway, but the flag
+  //    avoids the extra await).
   const parsed = safeParseContent(event.message.content);
   const messageText = parsed.text ?? '';
 
@@ -269,34 +260,19 @@ export async function routeInbound(event: InboundEvent): Promise<void> {
     const agentGroup = getAgentGroup(agent.agent_group_id);
     if (!agentGroup) continue;
 
-    const engages = evaluateEngage(
-      agent,
-      messageText,
-      isMention,
-      mg,
-      event.threadId,
-    );
+    const engages = evaluateEngage(agent, messageText, isMention, mg, event.threadId);
 
-    const accessOk =
-      engages &&
-      (!accessGate ||
-        accessGate(event, userId, mg, agent.agent_group_id).allowed);
-    const scopeOk =
-      engages &&
-      (!senderScopeGate || senderScopeGate(event, userId, mg, agent).allowed);
+    const accessOk = engages && (!accessGate || accessGate(event, userId, mg, agent.agent_group_id).allowed);
+    const scopeOk = engages && (!senderScopeGate || senderScopeGate(event, userId, mg, agent).allowed);
 
     if (engages && accessOk && scopeOk) {
-      await deliverToAgent(
-        agent,
-        agentGroup,
-        mg,
-        event,
-        userId,
-        adapter?.supportsThreads === true,
-        true,
-      );
+      await deliverToAgent(agent, agentGroup, mg, event, userId, adapter?.supportsThreads === true, true);
       engagedCount++;
 
+      // Mention-sticky: ask the adapter to subscribe the thread so the
+      // platform's subscribed-message path carries follow-ups without
+      // requiring another @mention. Threaded-adapter only; DMs and
+      // non-threaded platforms skip.
       if (
         !subscribed &&
         agent.engage_mode === 'mention-sticky' &&
@@ -306,26 +282,15 @@ export async function routeInbound(event: InboundEvent): Promise<void> {
         mg.is_group !== 0
       ) {
         subscribed = true;
-        void adapter
-          .subscribe(event.platformId, event.threadId)
-          .catch((err) => {
-            log.warn('adapter.subscribe failed', {
-              channelType: event.channelType,
-              threadId: event.threadId,
-              err,
-            });
-          });
+        // Fire-and-forget — subscribe is platform-side bookkeeping and
+        // shouldn't block message routing. Errors are logged inside the
+        // adapter (or by the promise rejection handler below).
+        void adapter.subscribe(event.platformId, event.threadId).catch((err) => {
+          log.warn('adapter.subscribe failed', { channelType: event.channelType, threadId: event.threadId, err });
+        });
       }
     } else if (agent.ignored_message_policy === 'accumulate') {
-      await deliverToAgent(
-        agent,
-        agentGroup,
-        mg,
-        event,
-        userId,
-        adapter?.supportsThreads === true,
-        false,
-      );
+      await deliverToAgent(agent, agentGroup, mg, event, userId, adapter?.supportsThreads === true, false);
       accumulatedCount++;
     } else {
       log.debug('Message not engaged for agent (drop policy)', {
@@ -353,6 +318,23 @@ export async function routeInbound(event: InboundEvent): Promise<void> {
 
 /**
  * Decide whether a given wired agent should engage on this message.
+ *
+ *   'pattern'        — regex test on text; '.' = always
+ *   'mention'        — bot must be mentioned on the platform. Resolved by
+ *                      the adapter (SDK-level) and forwarded as
+ *                      `event.message.isMention`. Agent display name
+ *                      (`agent_group.name`) is irrelevant — users address
+ *                      the bot via its platform username (@botname on
+ *                      Telegram, user-id mention on Slack/Discord), not
+ *                      via the agent's NanoClaw-side display name. If a
+ *                      user wants to disambiguate between multiple agents
+ *                      wired to one chat, use engage_mode='pattern' with
+ *                      the disambiguator as the regex.
+ *   'mention-sticky' — platform mention OR an active per-thread session
+ *                      already exists for this (agent, mg, thread). The
+ *                      session existence IS our subscription state; once
+ *                      a thread has engaged us once, follow-ups arrive
+ *                      with no mention and should still fire.
  */
 function evaluateEngage(
   agent: MessagingGroupAgent,
@@ -368,6 +350,7 @@ function evaluateEngage(
       try {
         return new RegExp(pat).test(text);
       } catch {
+        // Bad regex: fail open so admin sees the agent responding + can fix.
         return true;
       }
     }
@@ -375,12 +358,10 @@ function evaluateEngage(
       return isMention;
     case 'mention-sticky': {
       if (isMention) return true;
-      if (mg.is_group === 0) return false;
-      const existing = findSessionForAgent(
-        agent.agent_group_id,
-        mg.id,
-        threadId,
-      );
+      // Sticky follow-up: session already exists for this (agent, mg, thread)
+      // — the thread was activated before, keep firing.
+      if (mg.is_group === 0) return false; // DMs never use mention-sticky sensibly
+      const existing = findSessionForAgent(agent.agent_group_id, mg.id, threadId);
       return existing !== undefined;
     }
     default:
@@ -397,38 +378,34 @@ async function deliverToAgent(
   adapterSupportsThreads: boolean,
   wake: boolean,
 ): Promise<void> {
+  // Apply the adapter thread policy: threaded adapter in a group chat →
+  // per-thread session regardless of wiring. agent-shared preserved (it's
+  // a cross-channel directive the adapter doesn't know about). DMs collapse
+  // sub-threads to one session (is_group=0 short-circuit).
   let effectiveSessionMode = agent.session_mode;
-  if (
-    adapterSupportsThreads &&
-    effectiveSessionMode !== 'agent-shared' &&
-    mg.is_group !== 0
-  ) {
+  if (adapterSupportsThreads && effectiveSessionMode !== 'agent-shared' && mg.is_group !== 0) {
     effectiveSessionMode = 'per-thread';
   }
 
-  const { session, created } = resolveSession(
-    agent.agent_group_id,
-    mg.id,
-    event.threadId,
-    effectiveSessionMode,
-  );
+  const { session, created } = resolveSession(agent.agent_group_id, mg.id, event.threadId, effectiveSessionMode);
 
+  // The inbound row's (channel_type, platform_id, thread_id) is the address
+  // the agent's reply will be delivered to. Normally it mirrors the source
+  // (stamped from the event). When the caller supplied `replyTo` (CLI admin
+  // transport acting on operator intent), the reply is redirected there.
   const deliveryAddr = event.replyTo ?? {
     channelType: event.channelType,
     platformId: event.platformId,
     threadId: event.threadId,
   };
 
+  // Command gate: classify slash commands before they reach the container.
+  // Filtered commands are dropped silently. Denied admin commands get a
+  // permission-denied response written directly to messages_out.
   if (event.message.kind === 'chat' || event.message.kind === 'chat-sdk') {
-    const gate = gateCommand(
-      event.message.content,
-      userId,
-      agent.agent_group_id,
-    );
+    const gate = gateCommand(event.message.content, userId, agent.agent_group_id);
     if (gate.action === 'filter') {
-      log.debug('Filtered command dropped by gate', {
-        agentGroupId: agent.agent_group_id,
-      });
+      log.debug('Filtered command dropped by gate', { agentGroupId: agent.agent_group_id });
       return;
     }
     if (gate.action === 'deny') {
@@ -438,15 +415,9 @@ async function deliverToAgent(
         platformId: deliveryAddr.platformId,
         channelType: deliveryAddr.channelType,
         threadId: deliveryAddr.threadId,
-        content: JSON.stringify({
-          text: `Permission denied: ${gate.command} requires admin access.`,
-        }),
+        content: JSON.stringify({ text: `Permission denied: ${gate.command} requires admin access.` }),
       });
-      log.info('Admin command denied by gate', {
-        command: gate.command,
-        userId,
-        agentGroupId: agent.agent_group_id,
-      });
+      log.info('Admin command denied by gate', { command: gate.command, userId, agentGroupId: agent.agent_group_id });
       return;
     }
   }
@@ -474,13 +445,9 @@ async function deliverToAgent(
   });
 
   if (wake) {
-    startTypingRefresh(
-      session.id,
-      session.agent_group_id,
-      event.channelType,
-      event.platformId,
-      event.threadId,
-    );
+    // Typing indicator + wake are only for the engaged branch; accumulated
+    // messages sit silently until a real trigger fires.
+    startTypingRefresh(session.id, session.agent_group_id, event.channelType, event.platformId, event.threadId);
     const freshSession = getSession(session.id);
     if (freshSession) {
       await wakeContainer(freshSession);
@@ -494,10 +461,7 @@ async function deliverToAgent(
  * collide across sessions (or, more subtly, within one session if re-routed
  * after a retry). Namespace by agent_group_id to keep ids unique per session.
  */
-function messageIdForAgent(
-  baseId: string | undefined,
-  agentGroupId: string,
-): string {
+function messageIdForAgent(baseId: string | undefined, agentGroupId: string): string {
   const id = baseId && baseId.length > 0 ? baseId : generateId();
   return `${id}:${agentGroupId}`;
 }

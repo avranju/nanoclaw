@@ -1,34 +1,14 @@
-import {
-  findByName,
-  getAllDestinations,
-  type DestinationEntry,
-} from './destinations.js';
-import {
-  getPendingMessages,
-  markProcessing,
-  markCompleted,
-  type MessageInRow,
-} from './db/messages-in.js';
+import { findByName, getAllDestinations, type DestinationEntry } from './destinations.js';
+import { getPendingMessages, markProcessing, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { writeMessageOut } from './db/messages-out.js';
 import { touchHeartbeat, clearStaleProcessingAcks } from './db/connection.js';
 import {
-  getStoredSessionId,
-  setStoredSessionId,
-  clearStoredSessionId,
+  clearContinuation,
+  migrateLegacyContinuation,
+  setContinuation,
 } from './db/session-state.js';
-import {
-  formatMessages,
-  extractRouting,
-  categorizeMessage,
-  isClearCommand,
-  stripInternalTags,
-  type RoutingContext,
-} from './formatter.js';
-import type {
-  AgentProvider,
-  AgentQuery,
-  ProviderEvent,
-} from './providers/types.js';
+import { formatMessages, extractRouting, categorizeMessage, isClearCommand, stripInternalTags, type RoutingContext } from './formatter.js';
+import type { AgentProvider, AgentQuery, ProviderEvent } from './providers/types.js';
 
 const POLL_INTERVAL_MS = 1000;
 const ACTIVE_POLL_INTERVAL_MS = 500;
@@ -43,6 +23,12 @@ function generateId(): string {
 
 export interface PollLoopConfig {
   provider: AgentProvider;
+  /**
+   * Name of the provider (e.g. "claude", "codex", "opencode"). Used to key
+   * the stored continuation per-provider so flipping providers doesn't
+   * resurrect a stale id from a different backend.
+   */
+  providerName: string;
   cwd: string;
   systemContext?: {
     instructions?: string;
@@ -63,8 +49,9 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
   // Resume the agent's prior session from a previous container run if one
   // was persisted. The continuation is opaque to the poll-loop — the
   // provider decides how to use it (Claude resumes a .jsonl transcript,
-  // other providers may reload a thread ID, etc.).
-  let continuation: string | undefined = getStoredSessionId();
+  // other providers may reload a thread ID, etc.). Keyed per-provider so
+  // a Codex thread id never gets handed to Claude or vice versa.
+  let continuation: string | undefined = migrateLegacyContinuation(config.providerName);
 
   if (continuation) {
     log(`Resuming agent session ${continuation}`);
@@ -82,9 +69,7 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
 
     // Periodic heartbeat so we know the loop is alive
     if (pollCount % 30 === 0) {
-      log(
-        `Poll heartbeat (${pollCount} iterations, ${messages.length} pending)`,
-      );
+      log(`Poll heartbeat (${pollCount} iterations, ${messages.length} pending)`);
     }
 
     if (messages.length === 0) {
@@ -117,13 +102,10 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     const commandIds: string[] = [];
 
     for (const msg of messages) {
-      if (
-        (msg.kind === 'chat' || msg.kind === 'chat-sdk') &&
-        isClearCommand(msg)
-      ) {
+      if ((msg.kind === 'chat' || msg.kind === 'chat-sdk') && isClearCommand(msg)) {
         log('Clearing session (resetting continuation)');
         continuation = undefined;
-        clearStoredSessionId();
+        clearContinuation(config.providerName);
         writeMessageOut({
           id: generateId(),
           kind: 'chat',
@@ -163,29 +145,20 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
     skipped = preTask.skipped;
     if (skipped.length > 0) {
       markCompleted(skipped);
-      log(
-        `Pre-task script skipped ${skipped.length} task(s): ${skipped.join(', ')}`,
-      );
+      log(`Pre-task script skipped ${skipped.length} task(s): ${skipped.join(', ')}`);
     }
     // MODULE-HOOK:scheduling-pre-task:end
 
     if (keep.length === 0) {
-      log(
-        `All ${normalMessages.length} non-command message(s) gated by script, skipping query`,
-      );
+      log(`All ${normalMessages.length} non-command message(s) gated by script, skipping query`);
       continue;
     }
 
     // Format messages: passthrough commands get raw text (only if the
     // provider natively handles slash commands), others get XML.
-    const prompt = formatMessagesWithCommands(
-      keep,
-      config.provider.supportsNativeSlashCommands,
-    );
+    const prompt = formatMessagesWithCommands(keep, config.provider.supportsNativeSlashCommands);
 
-    log(
-      `Processing ${keep.length} message(s), kinds: ${[...new Set(keep.map((m) => m.kind))].join(',')}`,
-    );
+    log(`Processing ${keep.length} message(s), kinds: ${[...new Set(keep.map((m) => m.kind))].join(',')}`);
 
     const query = config.provider.query({
       prompt,
@@ -196,14 +169,12 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
 
     // Process the query while concurrently polling for new messages
     const skippedSet = new Set(skipped);
-    const processingIds = ids.filter(
-      (id) => !commandIds.includes(id) && !skippedSet.has(id),
-    );
+    const processingIds = ids.filter((id) => !commandIds.includes(id) && !skippedSet.has(id));
     try {
-      const result = await processQuery(query, routing, processingIds);
+      const result = await processQuery(query, routing, processingIds, config.providerName);
       if (result.continuation && result.continuation !== continuation) {
         continuation = result.continuation;
-        setStoredSessionId(continuation);
+        setContinuation(config.providerName, continuation);
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
@@ -213,11 +184,9 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
       // this error means the stored continuation is unusable, and clear
       // it so the next attempt starts fresh.
       if (continuation && config.provider.isSessionInvalid(err)) {
-        log(
-          `Stale session detected (${continuation}) — clearing for next retry`,
-        );
+        log(`Stale session detected (${continuation}) — clearing for next retry`);
         continuation = undefined;
-        clearStoredSessionId();
+        clearContinuation(config.providerName);
       }
 
       // Write error response so the user knows something went wrong
@@ -244,18 +213,12 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
  * passthrough commands are sent raw (no XML wrapping) so the SDK can
  * dispatch them. Otherwise they fall through to standard XML formatting.
  */
-function formatMessagesWithCommands(
-  messages: MessageInRow[],
-  nativeSlashCommands: boolean,
-): string {
+function formatMessagesWithCommands(messages: MessageInRow[], nativeSlashCommands: boolean): string {
   const parts: string[] = [];
   const normalBatch: MessageInRow[] = [];
 
   for (const msg of messages) {
-    if (
-      nativeSlashCommands &&
-      (msg.kind === 'chat' || msg.kind === 'chat-sdk')
-    ) {
+    if (nativeSlashCommands && (msg.kind === 'chat' || msg.kind === 'chat-sdk')) {
       const cmdInfo = categorizeMessage(msg);
       if (cmdInfo.category === 'passthrough' || cmdInfo.category === 'admin') {
         // Flush normal batch first
@@ -286,14 +249,10 @@ async function processQuery(
   query: AgentQuery,
   routing: RoutingContext,
   initialBatchIds: string[],
+  providerName: string,
 ): Promise<QueryResult> {
   let queryContinuation: string | undefined;
   let done = false;
-  // Tracks whether the agent is mid-turn. Reset to false after each `result`
-  // event so the heartbeat goes stale between turns (causing the host-side
-  // typing indicator to clear). Restored to true when a new message is pushed
-  // into the query so typing resumes while the agent works on the follow-up.
-  let agentWorking = true;
 
   // Concurrent polling: push follow-ups into the active query as they arrive.
   // We do NOT force-end the stream on silence — keeping the query open is
@@ -301,14 +260,6 @@ async function processQuery(
   // Stream liveness is decided host-side via the heartbeat file + processing
   // claim age (see src/host-sweep.ts); if something is truly stuck, the host
   // will kill the container and messages get reset to pending.
-  // Keep the heartbeat alive between SDK events (e.g. during long tool runs
-  // where no events arrive for >6s and the host-side typing indicator expires).
-  // Only touch when agentWorking — otherwise the heartbeat stays fresh between
-  // turns, which keeps the typing indicator alive when the agent is idle.
-  const heartbeatHandle = setInterval(() => {
-    if (!done && agentWorking) touchHeartbeat();
-  }, 3000);
-
   const pollHandle = setInterval(() => {
     if (done) return;
 
@@ -321,8 +272,7 @@ async function processQuery(
     // host-generated welcome trigger with null thread vs a Discord DM reply).
     const newMessages = getPendingMessages().filter((m) => {
       if (m.kind === 'system') return false;
-      if ((m.kind === 'chat' || m.kind === 'chat-sdk') && isClearCommand(m))
-        return false;
+      if ((m.kind === 'chat' || m.kind === 'chat-sdk') && isClearCommand(m)) return false;
       return true;
     });
     if (newMessages.length > 0) {
@@ -330,10 +280,7 @@ async function processQuery(
       markProcessing(newIds);
 
       const prompt = formatMessages(newMessages);
-      log(
-        `Pushing ${newMessages.length} follow-up message(s) into active query`,
-      );
-      agentWorking = true; // new input arriving — agent becomes active again
+      log(`Pushing ${newMessages.length} follow-up message(s) into active query`);
       query.push(prompt);
 
       markCompleted(newIds);
@@ -353,7 +300,7 @@ async function processQuery(
         // container died between `init` and `result`, the SDK session was
         // effectively orphaned and the next message started a blank
         // Claude session with no prior context.
-        setStoredSessionId(event.continuation);
+        setContinuation(providerName, event.continuation);
       } else if (event.type === 'result') {
         // A result — with or without text — means the turn is done. Mark
         // the initial batch completed now so the host sweep doesn't see
@@ -365,15 +312,10 @@ async function processQuery(
         if (event.text) {
           dispatchResultText(event.text, routing);
         }
-        // Turn finished — stop touching the heartbeat so it goes stale and
-        // the host-side typing indicator clears. Restored when a follow-up
-        // message is pushed (agentWorking = true in pollHandle above).
-        agentWorking = false;
       }
     }
   } finally {
     done = true;
-    clearInterval(heartbeatHandle);
     clearInterval(pollHandle);
   }
 
@@ -389,9 +331,7 @@ function handleEvent(event: ProviderEvent, _routing: RoutingContext): void {
       log(`Result: ${event.text ? event.text.slice(0, 200) : '(empty)'}`);
       break;
     case 'error':
-      log(
-        `Error: ${event.message} (retryable: ${event.retryable}${event.classification ? `, ${event.classification}` : ''})`,
-      );
+      log(`Error: ${event.message} (retryable: ${event.retryable}${event.classification ? `, ${event.classification}` : ''})`);
       break;
     case 'progress':
       log(`Progress: ${event.message}`);
@@ -430,9 +370,7 @@ function dispatchResultText(text: string, routing: RoutingContext): void {
     const dest = findByName(toName);
     if (!dest) {
       log(`Unknown destination in <message to="${toName}">, dropping block`);
-      scratchpadParts.push(
-        `[dropped: unknown destination "${toName}"] ${body}`,
-      );
+      scratchpadParts.push(`[dropped: unknown destination "${toName}"] ${body}`);
       continue;
     }
     sendToDestination(dest, body, routing);
@@ -469,25 +407,16 @@ function dispatchResultText(text: string, routing: RoutingContext): void {
   }
 
   if (scratchpad) {
-    log(
-      `[scratchpad] ${scratchpad.slice(0, 500)}${scratchpad.length > 500 ? '…' : ''}`,
-    );
+    log(`[scratchpad] ${scratchpad.slice(0, 500)}${scratchpad.length > 500 ? '…' : ''}`);
   }
 
   if (sent === 0 && text.trim()) {
-    log(
-      `WARNING: agent output had no <message to="..."> blocks — nothing was sent`,
-    );
+    log(`WARNING: agent output had no <message to="..."> blocks — nothing was sent`);
   }
 }
 
-function sendToDestination(
-  dest: DestinationEntry,
-  body: string,
-  routing: RoutingContext,
-): void {
-  const platformId =
-    dest.type === 'channel' ? dest.platformId! : dest.agentGroupId!;
+function sendToDestination(dest: DestinationEntry, body: string, routing: RoutingContext): void {
+  const platformId = dest.type === 'channel' ? dest.platformId! : dest.agentGroupId!;
   const channelType = dest.type === 'channel' ? dest.channelType! : 'agent';
   // Inherit thread_id from the inbound routing context so replies land in the
   // same thread the conversation is in. For non-threaded adapters the router
