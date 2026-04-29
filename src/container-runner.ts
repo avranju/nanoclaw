@@ -20,8 +20,16 @@ import {
   ONECLI_URL,
   TIMEZONE,
 } from './config.js';
-import { readContainerConfig, writeContainerConfig } from './container-config.js';
-import { CONTAINER_RUNTIME_BIN, hostGatewayArgs, readonlyMountArgs, stopContainer } from './container-runtime.js';
+import {
+  readContainerConfig,
+  writeContainerConfig,
+} from './container-config.js';
+import {
+  CONTAINER_RUNTIME_BIN,
+  hostGatewayArgs,
+  readonlyMountArgs,
+  stopContainer,
+} from './container-runtime.js';
 import { composeGroupClaudeMd } from './claude-md-compose.js';
 import { getAgentGroup } from './db/agent-groups.js';
 import { getDb, hasTable } from './db/connection.js';
@@ -49,7 +57,10 @@ import type { AgentGroup, Session } from './types.js';
 const onecli = new OneCLI({ url: ONECLI_URL, apiKey: ONECLI_API_KEY });
 
 /** Active containers tracked by session ID. */
-const activeContainers = new Map<string, { process: ChildProcess; containerName: string }>();
+const activeContainers = new Map<
+  string,
+  { process: ChildProcess; containerName: string }
+>();
 
 /**
  * In-flight wake promises, keyed by session id. Deduplicates concurrent
@@ -82,7 +93,9 @@ export function wakeContainer(session: Session): Promise<void> {
   }
   const existing = wakePromises.get(session.id);
   if (existing) {
-    log.debug('Container wake already in-flight — joining existing promise', { sessionId: session.id });
+    log.debug('Container wake already in-flight — joining existing promise', {
+      sessionId: session.id,
+    });
     return existing;
   }
   const promise = spawnContainer(session).finally(() => {
@@ -95,7 +108,9 @@ export function wakeContainer(session: Session): Promise<void> {
 async function spawnContainer(session: Session): Promise<void> {
   const agentGroup = getAgentGroup(session.agent_group_id);
   if (!agentGroup) {
-    log.error('Agent group not found', { agentGroupId: session.agent_group_id });
+    log.error('Agent group not found', {
+      agentGroupId: session.agent_group_id,
+    });
     return;
   }
 
@@ -103,7 +118,8 @@ async function spawnContainer(session: Session): Promise<void> {
   // changes take effect on wake. Destinations come from the agent-to-agent
   // module — skip when the module isn't installed (table absent).
   if (hasTable(getDb(), 'agent_destinations')) {
-    const { writeDestinations } = await import('./modules/agent-to-agent/write-destinations.js');
+    const { writeDestinations } =
+      await import('./modules/agent-to-agent/write-destinations.js');
     writeDestinations(agentGroup.id, session.id);
   }
   writeSessionRouting(agentGroup.id, session.id);
@@ -119,9 +135,18 @@ async function spawnContainer(session: Session): Promise<void> {
   // Resolve the effective provider + any host-side contribution it declares
   // (extra mounts, env passthrough). Computed once and threaded through both
   // buildMounts and buildContainerArgs so side effects (mkdir, etc.) fire once.
-  const { provider, contribution } = resolveProviderContribution(session, agentGroup, containerConfig);
+  const { provider, contribution } = resolveProviderContribution(
+    session,
+    agentGroup,
+    containerConfig,
+  );
 
-  const mounts = buildMounts(agentGroup, session, containerConfig, contribution);
+  const mounts = buildMounts(
+    agentGroup,
+    session,
+    containerConfig,
+    contribution,
+  );
   const containerName = `nanoclaw-v2-${agentGroup.folder}-${Date.now()}`;
   // OneCLI agent identifier is always the agent group id — stable across
   // sessions and reversible via getAgentGroup() for approval routing.
@@ -136,7 +161,11 @@ async function spawnContainer(session: Session): Promise<void> {
     agentIdentifier,
   );
 
-  log.info('Spawning container', { sessionId: session.id, agentGroup: agentGroup.name, containerName });
+  log.info('Spawning container', {
+    sessionId: session.id,
+    agentGroup: agentGroup.name,
+    containerName,
+  });
 
   // Clear any orphan heartbeat from a previous container instance — the
   // sweep's ceiling check treats a missing file as "fresh spawn, give grace"
@@ -144,7 +173,9 @@ async function spawnContainer(session: Session): Promise<void> {
   // immediate kill before the new container touches the file itself.
   fs.rmSync(heartbeatPath(agentGroup.id, session.id), { force: true });
 
-  const container = spawn(CONTAINER_RUNTIME_BIN, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+  const container = spawn(CONTAINER_RUNTIME_BIN, args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
 
   activeContainers.set(session.id, { process: container, containerName });
   markContainerRunning(session.id);
@@ -168,7 +199,11 @@ async function spawnContainer(session: Session): Promise<void> {
     activeContainers.delete(session.id);
     markContainerStopped(session.id);
     stopTypingRefresh(session.id);
-    log.info('Container exited', { sessionId: session.id, code, containerName });
+    log.info('Container exited', {
+      sessionId: session.id,
+      code,
+      containerName,
+    });
   });
 
   container.on('error', (err) => {
@@ -184,7 +219,11 @@ export function killContainer(sessionId: string, reason: string): void {
   const entry = activeContainers.get(sessionId);
   if (!entry) return;
 
-  log.info('Killing container', { sessionId, reason, containerName: entry.containerName });
+  log.info('Killing container', {
+    sessionId,
+    reason,
+    containerName: entry.containerName,
+  });
   try {
     stopContainer(entry.containerName);
   } catch {
@@ -208,7 +247,12 @@ export function resolveProviderName(
   agentGroupProvider: string | null | undefined,
   containerConfigProvider: string | null | undefined,
 ): string {
-  return (sessionProvider || agentGroupProvider || containerConfigProvider || 'claude').toLowerCase();
+  return (
+    sessionProvider ||
+    agentGroupProvider ||
+    containerConfigProvider ||
+    'claude'
+  ).toLowerCase();
 }
 
 function resolveProviderContribution(
@@ -216,7 +260,11 @@ function resolveProviderContribution(
   agentGroup: AgentGroup,
   containerConfig: import('./container-config.js').ContainerConfig,
 ): { provider: string; contribution: ProviderContainerContribution } {
-  const provider = resolveProviderName(session.agent_provider, agentGroup.agent_provider, containerConfig.provider);
+  const provider = resolveProviderName(
+    session.agent_provider,
+    agentGroup.agent_provider,
+    containerConfig.provider,
+  );
   const fn = getProviderContainerConfig(provider);
   const contribution = fn
     ? fn({
@@ -242,7 +290,12 @@ function buildMounts(
   initGroupFilesystem(agentGroup);
 
   // Sync skill symlinks based on container.json selection before mounting.
-  const claudeDir = path.join(DATA_DIR, 'v2-sessions', agentGroup.id, '.claude-shared');
+  const claudeDir = path.join(
+    DATA_DIR,
+    'v2-sessions',
+    agentGroup.id,
+    '.claude-shared',
+  );
   syncSkillSymlinks(claudeDir, containerConfig);
 
   // Compose CLAUDE.md fresh every spawn from the shared base, enabled skill
@@ -254,16 +307,28 @@ function buildMounts(
   const groupDir = path.resolve(GROUPS_DIR, agentGroup.folder);
 
   // Session folder at /workspace (contains inbound.db, outbound.db, outbox/, .claude/)
-  mounts.push({ hostPath: sessDir, containerPath: '/workspace', readonly: false });
+  mounts.push({
+    hostPath: sessDir,
+    containerPath: '/workspace',
+    readonly: false,
+  });
 
   // Agent group folder at /workspace/agent (RW for working files + CLAUDE.local.md)
-  mounts.push({ hostPath: groupDir, containerPath: '/workspace/agent', readonly: false });
+  mounts.push({
+    hostPath: groupDir,
+    containerPath: '/workspace/agent',
+    readonly: false,
+  });
 
   // container.json — nested RO mount on top of RW group dir so the agent
   // can read its config but cannot modify it.
   const containerJsonPath = path.join(groupDir, 'container.json');
   if (fs.existsSync(containerJsonPath)) {
-    mounts.push({ hostPath: containerJsonPath, containerPath: '/workspace/agent/container.json', readonly: true });
+    mounts.push({
+      hostPath: containerJsonPath,
+      containerPath: '/workspace/agent/container.json',
+      readonly: true,
+    });
   }
 
   // Composer-managed CLAUDE.md artifacts — nested RO mounts. These are
@@ -275,38 +340,71 @@ function buildMounts(
   // a nested mount there.
   const composedClaudeMd = path.join(groupDir, 'CLAUDE.md');
   if (fs.existsSync(composedClaudeMd)) {
-    mounts.push({ hostPath: composedClaudeMd, containerPath: '/workspace/agent/CLAUDE.md', readonly: true });
+    mounts.push({
+      hostPath: composedClaudeMd,
+      containerPath: '/workspace/agent/CLAUDE.md',
+      readonly: true,
+    });
   }
   const fragmentsDir = path.join(groupDir, '.claude-fragments');
   if (fs.existsSync(fragmentsDir)) {
-    mounts.push({ hostPath: fragmentsDir, containerPath: '/workspace/agent/.claude-fragments', readonly: true });
+    mounts.push({
+      hostPath: fragmentsDir,
+      containerPath: '/workspace/agent/.claude-fragments',
+      readonly: true,
+    });
   }
 
   // Global memory directory — always read-only.
   const globalDir = path.join(GROUPS_DIR, 'global');
   if (fs.existsSync(globalDir)) {
-    mounts.push({ hostPath: globalDir, containerPath: '/workspace/global', readonly: true });
+    mounts.push({
+      hostPath: globalDir,
+      containerPath: '/workspace/global',
+      readonly: true,
+    });
   }
 
   // Shared CLAUDE.md — read-only, imported by the composed entry point via
   // the `.claude-shared.md` symlink inside the group dir.
   const sharedClaudeMd = path.join(process.cwd(), 'container', 'CLAUDE.md');
   if (fs.existsSync(sharedClaudeMd)) {
-    mounts.push({ hostPath: sharedClaudeMd, containerPath: '/app/CLAUDE.md', readonly: true });
+    mounts.push({
+      hostPath: sharedClaudeMd,
+      containerPath: '/app/CLAUDE.md',
+      readonly: true,
+    });
   }
 
   // Per-group .claude-shared at /home/node/.claude (Claude state, settings,
   // skill symlinks)
-  mounts.push({ hostPath: claudeDir, containerPath: '/home/node/.claude', readonly: false });
+  mounts.push({
+    hostPath: claudeDir,
+    containerPath: '/home/node/.claude',
+    readonly: false,
+  });
 
   // Shared agent-runner source — read-only, same code for all groups.
-  const agentRunnerSrc = path.join(projectRoot, 'container', 'agent-runner', 'src');
-  mounts.push({ hostPath: agentRunnerSrc, containerPath: '/app/src', readonly: true });
+  const agentRunnerSrc = path.join(
+    projectRoot,
+    'container',
+    'agent-runner',
+    'src',
+  );
+  mounts.push({
+    hostPath: agentRunnerSrc,
+    containerPath: '/app/src',
+    readonly: true,
+  });
 
   // Shared skills — read-only, symlinks in .claude-shared/skills/ point here.
   const skillsSrc = path.join(projectRoot, 'container', 'skills');
   if (fs.existsSync(skillsSrc)) {
-    mounts.push({ hostPath: skillsSrc, containerPath: '/app/skills', readonly: true });
+    mounts.push({
+      hostPath: skillsSrc,
+      containerPath: '/app/skills',
+      readonly: true,
+    });
   }
 
   // SSH keys — read-only so agents can SSH to remote hosts.
@@ -331,8 +429,14 @@ function buildMounts(
   }
 
   // Additional mounts from container config
-  if (containerConfig.additionalMounts && containerConfig.additionalMounts.length > 0) {
-    const validated = validateAdditionalMounts(containerConfig.additionalMounts, agentGroup.name);
+  if (
+    containerConfig.additionalMounts &&
+    containerConfig.additionalMounts.length > 0
+  ) {
+    const validated = validateAdditionalMounts(
+      containerConfig.additionalMounts,
+      agentGroup.name,
+    );
     mounts.push(...validated);
   }
 
@@ -349,7 +453,10 @@ function buildMounts(
  * selection. Each symlink points to a container path (/app/skills/<name>)
  * so it's dangling on the host but valid inside the container.
  */
-function syncSkillSymlinks(claudeDir: string, containerConfig: import('./container-config.js').ContainerConfig): void {
+function syncSkillSymlinks(
+  claudeDir: string,
+  containerConfig: import('./container-config.js').ContainerConfig,
+): void {
   const skillsDir = path.join(claudeDir, 'skills');
   if (!fs.existsSync(skillsDir)) {
     fs.mkdirSync(skillsDir, { recursive: true });
@@ -443,7 +550,14 @@ async function buildContainerArgs(
   providerContribution: ProviderContainerContribution,
   agentIdentifier?: string,
 ): Promise<string[]> {
-  const args: string[] = ['run', '--rm', '--name', containerName, '--label', CONTAINER_INSTALL_LABEL];
+  const args: string[] = [
+    'run',
+    '--rm',
+    '--name',
+    containerName,
+    '--label',
+    CONTAINER_INSTALL_LABEL,
+  ];
 
   // Environment — only vars read by code we don't own.
   // Everything NanoClaw-specific is in container.json (read by runner at startup).
@@ -460,16 +574,28 @@ async function buildContainerArgs(
   // are routed through the agent vault for credential injection.
   try {
     if (agentIdentifier) {
-      await onecli.ensureAgent({ name: agentGroup.name, identifier: agentIdentifier });
+      await onecli.ensureAgent({
+        name: agentGroup.name,
+        identifier: agentIdentifier,
+      });
     }
-    const onecliApplied = await onecli.applyContainerConfig(args, { addHostMapping: false, agent: agentIdentifier });
+    const onecliApplied = await onecli.applyContainerConfig(args, {
+      addHostMapping: false,
+      agent: agentIdentifier,
+    });
     if (onecliApplied) {
       log.info('OneCLI gateway applied', { containerName });
     } else {
-      log.warn('OneCLI gateway not applied — container will have no credentials', { containerName });
+      log.warn(
+        'OneCLI gateway not applied — container will have no credentials',
+        { containerName },
+      );
     }
   } catch (err) {
-    log.warn('OneCLI gateway error — container will have no credentials', { containerName, err });
+    log.warn('OneCLI gateway error — container will have no credentials', {
+      containerName,
+      err,
+    });
   }
 
   // Host gateway
@@ -505,7 +631,9 @@ async function buildContainerArgs(
 }
 
 /** Build a per-agent-group Docker image with custom packages. */
-export async function buildAgentGroupImage(agentGroupId: string): Promise<void> {
+export async function buildAgentGroupImage(
+  agentGroupId: string,
+): Promise<void> {
   const agentGroup = getAgentGroup(agentGroupId);
   if (!agentGroup) throw new Error('Agent group not found');
 
@@ -526,24 +654,34 @@ export async function buildAgentGroupImage(agentGroupId: string): Promise<void> 
     // to /root/.npmrc (base image sets it up for agent-browser) so packages
     // with postinstall — e.g. playwright, puppeteer, native addons — don't
     // install silently broken.
-    const allowlist = npmPackages.map((p) => `echo 'only-built-dependencies[]=${p}' >> /root/.npmrc`).join(' && ');
+    const allowlist = npmPackages
+      .map((p) => `echo 'only-built-dependencies[]=${p}' >> /root/.npmrc`)
+      .join(' && ');
     dockerfile += `RUN ${allowlist} && pnpm install -g ${npmPackages.join(' ')}\n`;
   }
   dockerfile += 'USER node\n';
 
   const imageTag = `${CONTAINER_IMAGE_BASE}:${agentGroupId}`;
 
-  log.info('Building per-agent-group image', { agentGroupId, imageTag, apt: aptPackages, npm: npmPackages });
+  log.info('Building per-agent-group image', {
+    agentGroupId,
+    imageTag,
+    apt: aptPackages,
+    npm: npmPackages,
+  });
 
   // Write Dockerfile to temp file and build
   const tmpDockerfile = path.join(DATA_DIR, `Dockerfile.${agentGroupId}`);
   fs.writeFileSync(tmpDockerfile, dockerfile);
   try {
-    execSync(`${CONTAINER_RUNTIME_BIN} build -t ${imageTag} -f ${tmpDockerfile} .`, {
-      cwd: DATA_DIR,
-      stdio: 'pipe',
-      timeout: 300_000,
-    });
+    execSync(
+      `${CONTAINER_RUNTIME_BIN} build -t ${imageTag} -f ${tmpDockerfile} .`,
+      {
+        cwd: DATA_DIR,
+        stdio: 'pipe',
+        timeout: 300_000,
+      },
+    );
   } finally {
     fs.unlinkSync(tmpDockerfile);
   }
