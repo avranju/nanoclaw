@@ -131,6 +131,7 @@ RUN mkdir -p /workspace/group /workspace/extra && \
     chown -R node:node /workspace && \
     chmod 777 /home/node
 
+
 USER node
 WORKDIR /workspace/group
 

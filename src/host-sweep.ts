@@ -194,6 +194,8 @@ async function sweepSession(session: Session): Promise<void> {
         sessionId: session.id,
         count: dueCount,
       });
+      // wakeContainer never throws — transient spawn failures (OneCLI down,
+      // etc.) return false and leave messages pending for the next tick.
       await wakeContainer(session);
     }
 

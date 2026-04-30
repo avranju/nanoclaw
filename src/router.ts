@@ -27,7 +27,10 @@ import {
   getMessagingGroupWithAgentCount,
 } from './db/messaging-groups.js';
 import { findSessionForAgent } from './db/sessions.js';
-import { startTypingRefresh } from './modules/typing/index.js';
+import {
+  startTypingRefresh,
+  stopTypingRefresh,
+} from './modules/typing/index.js';
 import { log } from './log.js';
 import {
   resolveSession,
@@ -340,7 +343,17 @@ export async function routeInbound(event: InboundEvent): Promise<void> {
             });
           });
       }
-    } else if (agent.ignored_message_policy === 'accumulate') {
+    } else if (
+      agent.ignored_message_policy === 'accumulate' &&
+      !(engages && (!accessOk || !scopeOk))
+    ) {
+      // Accumulate stores the message as silent context. We allow it when
+      // engagement simply didn't fire, but NOT when engagement fired and
+      // the access/scope gate refused — those refusals are security
+      // decisions about an untrusted sender, and silently storing their
+      // message (which also stages their attachments to disk via
+      // writeSessionMessage → extractAttachmentFiles) is exactly what the
+      // gate is meant to prevent.
       await deliverToAgent(
         agent,
         agentGroup,
@@ -540,7 +553,11 @@ async function deliverToAgent(
     );
     const freshSession = getSession(session.id);
     if (freshSession) {
-      await wakeContainer(freshSession);
+      const woke = await wakeContainer(freshSession);
+      // wakeContainer never throws — it returns false on transient spawn
+      // failure (host-sweep retries). Stop the typing indicator we just
+      // started so it doesn't leak; the inbound row stays pending.
+      if (!woke) stopTypingRefresh(freshSession.id);
     }
   }
 }
