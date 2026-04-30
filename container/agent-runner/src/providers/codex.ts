@@ -271,8 +271,12 @@ async function* runOneTurn(
         break;
       }
       case 'thread/status/changed': {
-        const status = params.status as string | undefined;
-        if (status) buffer.push({ type: 'progress', message: `status: ${status}` });
+        const status = params.status as unknown;
+        if (status !== undefined && status !== null) {
+          const rendered =
+            typeof status === 'string' ? status : JSON.stringify(status);
+          buffer.push({ type: 'progress', message: `status: ${rendered}` });
+        }
         break;
       }
       default:
