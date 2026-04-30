@@ -37,13 +37,23 @@ registerProviderContainerConfig('codex', (ctx) => {
   }
 
   const env: Record<string, string> = {};
-  for (const key of ['OPENAI_API_KEY', 'CODEX_MODEL', 'OPENAI_BASE_URL'] as const) {
+  for (const key of [
+    'OPENAI_API_KEY',
+    'CODEX_MODEL',
+    'OPENAI_BASE_URL',
+  ] as const) {
     const value = ctx.hostEnv[key];
     if (value) env[key] = value;
   }
 
   return {
-    mounts: [{ hostPath: codexDir, containerPath: '/home/node/.codex', readonly: false }],
+    mounts: [
+      {
+        hostPath: codexDir,
+        containerPath: '/home/node/.codex',
+        readonly: false,
+      },
+    ],
     env,
   };
 });
