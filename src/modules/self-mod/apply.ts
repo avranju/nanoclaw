@@ -14,8 +14,10 @@
 import { updateContainerConfig } from '../../container-config.js';
 import { buildAgentGroupImage, killContainer } from '../../container-runner.js';
 import { getAgentGroup } from '../../db/agent-groups.js';
+import { getMessagingGroup } from '../../db/messaging-groups.js';
 import { log } from '../../log.js';
 import { writeSessionMessage } from '../../session-manager.js';
+import type { Session } from '../../types.js';
 import type { ApprovalHandler } from '../approvals/index.js';
 
 export const applyInstallPackages: ApprovalHandler = async ({
@@ -46,14 +48,17 @@ export const applyInstallPackages: ApprovalHandler = async ({
     await buildAgentGroupImage(session.agent_group_id);
     killContainer(session.id, 'rebuild applied');
     // Schedule a follow-up prompt a few seconds after kill so the host sweep
-    // respawns the container on the new image and the agent verifies + reports.
+    // respawns the container on the new image and the agent verifies + reports
+    // back to the originating chat. Falling back to an agent self-note is only
+    // for sessions that have no channel route.
+    const routing = followUpRouting(session);
     writeSessionMessage(session.agent_group_id, session.id, {
       id: `appr-note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       kind: 'chat',
       timestamp: new Date().toISOString(),
-      platformId: session.agent_group_id,
-      channelType: 'agent',
-      threadId: null,
+      platformId: routing.platformId,
+      channelType: routing.channelType,
+      threadId: routing.threadId,
       content: JSON.stringify({
         text: `Packages installed (${pkgs}) and container rebuilt. Verify the new packages are available (e.g. run them or check versions) and report the result to the user.`,
         sender: 'system',
@@ -77,6 +82,28 @@ export const applyInstallPackages: ApprovalHandler = async ({
     });
   }
 };
+
+function followUpRouting(session: Session): {
+  platformId: string;
+  channelType: string;
+  threadId: string | null;
+} {
+  if (session.messaging_group_id) {
+    const mg = getMessagingGroup(session.messaging_group_id);
+    if (mg) {
+      return {
+        platformId: mg.platform_id,
+        channelType: mg.channel_type,
+        threadId: session.thread_id,
+      };
+    }
+  }
+  return {
+    platformId: session.agent_group_id,
+    channelType: 'agent',
+    threadId: null,
+  };
+}
 
 export const applyAddMcpServer: ApprovalHandler = async ({
   session,
