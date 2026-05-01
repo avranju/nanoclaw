@@ -17,6 +17,14 @@ function continuationKey(providerName: string): string {
   return `continuation:${providerName.toLowerCase()}`;
 }
 
+export function getStateValue(key: string): string | undefined {
+  return getValue(key);
+}
+
+export function setStateValue(key: string, value: string): void {
+  setValue(key, value);
+}
+
 function getValue(key: string): string | undefined {
   const row = getOutboundDb()
     .prepare('SELECT value FROM session_state WHERE key = ?')

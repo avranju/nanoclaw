@@ -1,3 +1,4 @@
+import { invalidateCodexContinuationOnSkillChange } from './codex-skills.js';
 import { findByName, getAllDestinations, type DestinationEntry } from './destinations.js';
 import { getPendingMessages, markProcessing, markCompleted, type MessageInRow } from './db/messages-in.js';
 import { writeMessageOut } from './db/messages-out.js';
@@ -52,6 +53,14 @@ export async function runPollLoop(config: PollLoopConfig): Promise<void> {
   // other providers may reload a thread ID, etc.). Keyed per-provider so
   // a Codex thread id never gets handed to Claude or vice versa.
   let continuation: string | undefined = migrateLegacyContinuation(config.providerName);
+
+  if (config.providerName === 'codex') {
+    const previous = continuation;
+    continuation = invalidateCodexContinuationOnSkillChange(continuation);
+    if (previous && !continuation) {
+      log('Codex skill roster changed; starting a fresh thread so skills are rediscovered');
+    }
+  }
 
   if (continuation) {
     log(`Resuming agent session ${continuation}`);
