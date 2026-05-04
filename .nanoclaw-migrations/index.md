@@ -1,7 +1,7 @@
 # NanoClaw Migration Guide
 
 Generated: 2026-05-04
-Base: 8f91d3be576b830081f2a802e2f2d426b010f8f7
+Base: 1404f7feb632fca83dcd0cfe81a09d5be7763dc1
 HEAD at generation: 4c045fed175fb2c44abbcefb950b556173b8594d
 Upstream: 1404f7feb632fca83dcd0cfe81a09d5be7763dc1
 
