@@ -34,9 +34,12 @@ beforeEach(() => {
 // --- Pure functions ---
 
 describe('readonlyMountArgs', () => {
-  it('returns -v flag with :ro suffix', () => {
+  it('returns --mount flag with type=bind and readonly', () => {
     const args = readonlyMountArgs('/host/path', '/container/path');
-    expect(args).toEqual(['-v', '/host/path:/container/path:ro']);
+    expect(args).toEqual([
+      '--mount',
+      'type=bind,source=/host/path,target=/container/path,readonly',
+    ]);
   });
 });
 
@@ -49,8 +52,12 @@ describe('stopContainer', () => {
   });
 
   it('rejects names with shell metacharacters', () => {
-    expect(() => stopContainer('foo; rm -rf /')).toThrow('Invalid container name');
-    expect(() => stopContainer('foo$(whoami)')).toThrow('Invalid container name');
+    expect(() => stopContainer('foo; rm -rf /')).toThrow(
+      'Invalid container name',
+    );
+    expect(() => stopContainer('foo$(whoami)')).toThrow(
+      'Invalid container name',
+    );
     expect(() => stopContainer('foo`id`')).toThrow('Invalid container name');
     expect(mockExecSync).not.toHaveBeenCalled();
   });
@@ -72,9 +79,28 @@ describe('ensureContainerRuntimeRunning', () => {
     expect(log.debug).toHaveBeenCalledWith('Container runtime already running');
   });
 
-  it('throws when docker info fails', () => {
+  it('auto-starts when system status fails', () => {
+    // First call (system status) fails
     mockExecSync.mockImplementationOnce(() => {
-      throw new Error('Cannot connect to the Docker daemon');
+      throw new Error('not running');
+    });
+    // Second call (system start) succeeds
+    mockExecSync.mockReturnValueOnce('');
+
+    ensureContainerRuntimeRunning();
+
+    expect(mockExecSync).toHaveBeenCalledTimes(2);
+    expect(mockExecSync).toHaveBeenNthCalledWith(
+      2,
+      `${CONTAINER_RUNTIME_BIN} system start`,
+      { stdio: 'pipe', timeout: 30000 },
+    );
+    expect(logger.info).toHaveBeenCalledWith('Container runtime started');
+  });
+
+  it('throws when both status and start fail', () => {
+    mockExecSync.mockImplementation(() => {
+      throw new Error('failed');
     });
 
     expect(() => ensureContainerRuntimeRunning()).toThrow('Container runtime is required but failed to start');
@@ -104,7 +130,7 @@ describe('cleanupOrphans', () => {
 
     cleanupOrphans();
 
-    // ps + 2 stop calls
+    // ls + 2 stop calls (only running nanoclaw- containers)
     expect(mockExecSync).toHaveBeenCalledTimes(3);
     expect(mockExecSync).toHaveBeenNthCalledWith(2, `${CONTAINER_RUNTIME_BIN} stop -t 1 nanoclaw-group1-111`, {
       stdio: 'pipe',
@@ -119,7 +145,7 @@ describe('cleanupOrphans', () => {
   });
 
   it('does nothing when no orphans exist', () => {
-    mockExecSync.mockReturnValueOnce('');
+    mockExecSync.mockReturnValueOnce('[]');
 
     cleanupOrphans();
 
@@ -127,9 +153,9 @@ describe('cleanupOrphans', () => {
     expect(log.info).not.toHaveBeenCalled();
   });
 
-  it('warns and continues when ps fails', () => {
+  it('warns and continues when ls fails', () => {
     mockExecSync.mockImplementationOnce(() => {
-      throw new Error('docker not available');
+      throw new Error('container not available');
     });
 
     cleanupOrphans(); // should not throw
@@ -141,7 +167,11 @@ describe('cleanupOrphans', () => {
   });
 
   it('continues stopping remaining containers when one stop fails', () => {
-    mockExecSync.mockReturnValueOnce('nanoclaw-a-1\nnanoclaw-b-2\n');
+    const lsOutput = JSON.stringify([
+      { status: 'running', configuration: { id: 'nanoclaw-a-1' } },
+      { status: 'running', configuration: { id: 'nanoclaw-b-2' } },
+    ]);
+    mockExecSync.mockReturnValueOnce(lsOutput);
     // First stop fails
     mockExecSync.mockImplementationOnce(() => {
       throw new Error('already stopped');
