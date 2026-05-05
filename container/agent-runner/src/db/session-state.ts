@@ -17,14 +17,14 @@ function continuationKey(providerName: string): string {
   return `continuation:${providerName.toLowerCase()}`;
 }
 
-function getValue(key: string): string | undefined {
+export function getStateValue(key: string): string | undefined {
   const row = getOutboundDb()
     .prepare('SELECT value FROM session_state WHERE key = ?')
     .get(key) as { value: string } | undefined;
   return row?.value;
 }
 
-function setValue(key: string, value: string): void {
+export function setStateValue(key: string, value: string): void {
   getOutboundDb()
     .prepare('INSERT OR REPLACE INTO session_state (key, value, updated_at) VALUES (?, ?, ?)')
     .run(key, value, new Date().toISOString());
@@ -50,9 +50,9 @@ function deleteValue(key: string): void {
  * undefined).
  */
 export function migrateLegacyContinuation(providerName: string): string | undefined {
-  const legacy = getValue(LEGACY_KEY);
+  const legacy = getStateValue(LEGACY_KEY);
   const currentKey = continuationKey(providerName);
-  const current = getValue(currentKey);
+  const current = getStateValue(currentKey);
 
   if (legacy === undefined) return current;
 
@@ -62,16 +62,16 @@ export function migrateLegacyContinuation(providerName: string): string | undefi
   // Prefer the current provider's own slot if one already exists.
   if (current !== undefined) return current;
 
-  setValue(currentKey, legacy);
+  setStateValue(currentKey, legacy);
   return legacy;
 }
 
 export function getContinuation(providerName: string): string | undefined {
-  return getValue(continuationKey(providerName));
+  return getStateValue(continuationKey(providerName));
 }
 
 export function setContinuation(providerName: string, id: string): void {
-  setValue(continuationKey(providerName), id);
+  setStateValue(continuationKey(providerName), id);
 }
 
 export function clearContinuation(providerName: string): void {
