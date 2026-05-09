@@ -63,8 +63,10 @@ registerResource({
       description:
         'Restart containers for a group. Use --id <group-id> [--rebuild] [--message <text>]. ' +
         'From inside a container, --id is auto-filled and only the calling session is restarted. ' +
-        '--rebuild rebuilds the container image first. --message sets an on-wake message for the fresh container; ' +
-        'if omitted, containers come back on the next user message.',
+        '--rebuild rebuilds the container image first (required for package changes). ' +
+        '--message sets an on-wake instruction for the fresh container to act on when it starts — ' +
+        'use this when you need to continue after the restart (e.g. verify a new tool works, notify the user). ' +
+        'Without --message, the container stops and only starts again on the next user message.',
       handler: async (args, ctx) => {
         const id = (args.id as string) || (ctx.caller === 'agent' ? ctx.agentGroupId : undefined);
         if (!id) throw new Error('--id is required');
@@ -119,7 +121,8 @@ registerResource({
     'config update': {
       access: 'approval',
       description:
-        'Update container config scalar fields. Use --id <group-id> and any of: --provider, --model, --effort, --image-tag, --assistant-name, --max-messages-per-prompt, --cli-scope.',
+        'Update container config scalar fields. Changes are saved but do NOT take effect until you run `ncl groups restart`. ' +
+        'Use --id <group-id> and any of: --provider, --model, --effort, --image-tag, --assistant-name, --max-messages-per-prompt, --cli-scope.',
       handler: async (args) => {
         const id = args.id as string;
         if (!id) throw new Error('--id is required');
@@ -162,7 +165,8 @@ registerResource({
     'config add-mcp-server': {
       access: 'approval',
       description:
-        'Add an MCP server to a group. Use --id <group-id> --name <server-name> --command <cmd> [--args <json-array>] [--env <json-object>].',
+        'Add an MCP server to a group. Requires `ncl groups restart` to take effect. ' +
+        'Use --id <group-id> --name <server-name> --command <cmd> [--args <json-array>] [--env <json-object>].',
       handler: async (args) => {
         const id = args.id as string;
         if (!id) throw new Error('--id is required');
@@ -187,7 +191,8 @@ registerResource({
     },
     'config remove-mcp-server': {
       access: 'approval',
-      description: 'Remove an MCP server from a group. Use --id <group-id> --name <server-name>.',
+      description:
+        'Remove an MCP server from a group. Requires `ncl groups restart` to take effect. Use --id <group-id> --name <server-name>.',
       handler: async (args) => {
         const id = args.id as string;
         if (!id) throw new Error('--id is required');
@@ -207,7 +212,8 @@ registerResource({
     },
     'config add-package': {
       access: 'approval',
-      description: 'Add a package to a group. Use --id <group-id> and --apt <pkg> or --npm <pkg>.',
+      description:
+        'Add a package to a group. Requires `ncl groups restart --rebuild` to take effect. Use --id <group-id> and --apt <pkg> or --npm <pkg>.',
       handler: async (args) => {
         const id = args.id as string;
         if (!id) throw new Error('--id is required');
@@ -242,7 +248,8 @@ registerResource({
     },
     'config remove-package': {
       access: 'approval',
-      description: 'Remove a package from a group. Use --id <group-id> and --apt <pkg> or --npm <pkg>.',
+      description:
+        'Remove a package from a group. Requires `ncl groups restart --rebuild` to take effect. Use --id <group-id> and --apt <pkg> or --npm <pkg>.',
       handler: async (args) => {
         const id = args.id as string;
         if (!id) throw new Error('--id is required');

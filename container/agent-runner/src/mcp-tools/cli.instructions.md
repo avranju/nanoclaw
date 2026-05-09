@@ -71,6 +71,10 @@ ncl groups config add-package --npm some-package
 ncl members add --user telegram:jane
 ```
 
+### Important
+
+Config changes via `ncl groups config update` do not take effect until `ncl groups restart`. Run `ncl groups config help` for details.
+
 ### Tips
 
 - Use `ncl <resource> help` to see all available fields, types, enums, and which fields are auto-filled.
