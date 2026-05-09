@@ -341,7 +341,11 @@ function buildMounts(
  * selection. Each symlink points to a container path (/app/skills/<name>)
  * so it's dangling on the host but valid inside the container.
  */
-function syncSkillSymlinks(claudeDir: string, containerConfig: import('./container-config.js').ContainerConfig, provider = 'claude'): void {
+function syncSkillSymlinks(
+  claudeDir: string,
+  containerConfig: import('./container-config.js').ContainerConfig,
+  provider = 'claude',
+): void {
   const skillsDir = path.join(claudeDir, 'skills');
   const projectRoot = process.cwd();
   syncContainerSkillSymlinks(skillsDir, projectRoot, containerConfig, CONTAINER_SKILLS_TARGET_BASE, provider);

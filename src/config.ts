@@ -6,7 +6,14 @@ import { getContainerImageBase, getDefaultContainerImage, getInstallSlug } from 
 import { isValidTimezone } from './timezone.js';
 
 // Read config values from .env (falls back to process.env).
-const envConfig = readEnvFile(['ASSISTANT_NAME', 'ASSISTANT_HAS_OWN_NUMBER', 'ONECLI_URL', 'ONECLI_API_KEY', 'TZ', 'TELEGRAM_BOT_POOL']);
+const envConfig = readEnvFile([
+  'ASSISTANT_NAME',
+  'ASSISTANT_HAS_OWN_NUMBER',
+  'ONECLI_URL',
+  'ONECLI_API_KEY',
+  'TZ',
+  'TELEGRAM_BOT_POOL',
+]);
 
 export const ASSISTANT_NAME = process.env.ASSISTANT_NAME || envConfig.ASSISTANT_NAME || 'Andy';
 export const ASSISTANT_HAS_OWN_NUMBER =
@@ -68,11 +75,7 @@ function resolveConfigTimezone(): string {
 export const TIMEZONE = resolveConfigTimezone();
 
 // Telegram channel config
-export const TELEGRAM_BOT_POOL = (
-  process.env.TELEGRAM_BOT_POOL ||
-  envConfig.TELEGRAM_BOT_POOL ||
-  ''
-)
+export const TELEGRAM_BOT_POOL = (process.env.TELEGRAM_BOT_POOL || envConfig.TELEGRAM_BOT_POOL || '')
   .split(',')
   .map((t) => t.trim())
   .filter(Boolean);
