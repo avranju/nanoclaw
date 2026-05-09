@@ -104,7 +104,9 @@ RUN --mount=type=cache,target=/root/.cache/pnpm \
     echo "only-built-dependencies[]=agent-browser" > /root/.npmrc && \
     echo "only-built-dependencies[]=@anthropic-ai/claude-code" >> /root/.npmrc && \
     echo "only-built-dependencies[]=@openai/codex" >> /root/.npmrc && \
-    pnpm install -g "vercel@${VERCEL_VERSION}"
+    pnpm install -g \
+        "vercel@${VERCEL_VERSION}" \
+        "opencode-ai@${OPENCODE_VERSION}"
 
 RUN --mount=type=cache,target=/root/.cache/pnpm \
     pnpm install -g "agent-browser@${AGENT_BROWSER_VERSION}"

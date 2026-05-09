@@ -4,7 +4,6 @@ import { writeMessageOut } from './db/messages-out.js';
 import { getInboundDb, touchHeartbeat, clearStaleProcessingAcks } from './db/connection.js';
 import { clearContinuation, migrateLegacyContinuation, setContinuation } from './db/session-state.js';
 import { clearCurrentInReplyTo, setCurrentInReplyTo } from './current-batch.js';
-import { clearContinuation, migrateLegacyContinuation, setContinuation } from './db/session-state.js';
 import { invalidateCodexContinuationOnSkillChange } from './codex-skills.js';
 import {
   formatMessages,
